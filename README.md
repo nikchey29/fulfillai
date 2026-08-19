@@ -19,9 +19,10 @@ The project is being built incrementally to combine data engineering, SQL analyt
 
 Phase 0 — engineering foundation and repository setup.
 
-## Planned Architecture
+## Design Documentation
 
-See [docs/architecture.md](docs/architecture.md).
+- [System architecture](docs/architecture.md)
+- [Data model](docs/data_model.md)
 
 ## Repository Structure
 
