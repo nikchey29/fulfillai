@@ -1456,6 +1456,410 @@ def generate_order_items(
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Shipments
+# ---------------------------------------------------------------------------
+
+def generate_shipments(
+    orders: pd.DataFrame,
+    config: dict[str, Any],
+    rng: np.random.Generator,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate one shipment for every non-cancelled order.
+
+    Shipping behavior includes:
+    - configurable processing times
+    - configurable transit times
+    - carrier distribution
+    - shipping costs
+    - delivery exceptions
+    - late deliveries
+
+    Cancelled orders do not generate shipments.
+    """
+
+    fulfillment = config["fulfillment"]
+
+    processing_hours = fulfillment[
+        "processing_hours"
+    ]
+
+    transit_hours = fulfillment[
+        "transit_hours"
+    ]
+
+    shipping_costs = fulfillment[
+        "shipping_cost"
+    ]
+
+    exception_rate = float(
+        fulfillment[
+            "delivery_exception_rate"
+        ]
+    )
+
+    late_rate = float(
+        fulfillment[
+            "late_delivery_rate"
+        ]
+    )
+
+    carriers = fulfillment[
+        "carriers"
+    ]
+
+    if not 0.0 <= exception_rate <= 1.0:
+        raise ValueError(
+            "delivery_exception_rate must be "
+            "between 0 and 1."
+        )
+
+    if not 0.0 <= late_rate <= 1.0:
+        raise ValueError(
+            "late_delivery_rate must be "
+            "between 0 and 1."
+        )
+
+    carrier_names = list(
+        carriers.keys()
+    )
+
+    carrier_probabilities = np.array(
+        [
+            float(
+                carriers[name]
+            )
+            for name
+            in carrier_names
+        ],
+        dtype=float,
+    )
+
+    probability_total = (
+        carrier_probabilities.sum()
+    )
+
+    if probability_total <= 0:
+        raise ValueError(
+            "Carrier probabilities must "
+            "sum to a positive value."
+        )
+
+    carrier_probabilities = (
+        carrier_probabilities
+        / probability_total
+    )
+
+    updated_orders = (
+        orders.copy()
+    )
+
+    shipment_rows = []
+
+    exception_order_ids = []
+
+    shipment_id = 1
+
+    for order in orders.itertuples(
+        index=False
+    ):
+
+        if (
+            str(order.order_status)
+            == "cancelled"
+        ):
+            continue
+
+        order_id = int(
+            order.order_id
+        )
+
+        warehouse_id = int(
+            order.warehouse_id
+        )
+
+        shipping_method = str(
+            order.shipping_method
+        )
+
+        if (
+            shipping_method
+            not in processing_hours
+        ):
+            raise ValueError(
+                "Missing processing-hours "
+                "configuration for "
+                f"{shipping_method}."
+            )
+
+        if (
+            shipping_method
+            not in transit_hours
+        ):
+            raise ValueError(
+                "Missing transit-hours "
+                "configuration for "
+                f"{shipping_method}."
+            )
+
+        if (
+            shipping_method
+            not in shipping_costs
+        ):
+            raise ValueError(
+                "Missing shipping-cost "
+                "configuration for "
+                f"{shipping_method}."
+            )
+
+        order_ts = (
+            pd.Timestamp(
+                order.order_ts
+            )
+            .to_pydatetime()
+        )
+
+        expected_delivery_at = (
+            pd.Timestamp(
+                order.promised_delivery_ts
+            )
+            .to_pydatetime()
+        )
+
+        process_min = float(
+            processing_hours[
+                shipping_method
+            ]["min"]
+        )
+
+        process_max = float(
+            processing_hours[
+                shipping_method
+            ]["max"]
+        )
+
+        if process_max < process_min:
+            raise ValueError(
+                "Invalid processing-hours "
+                f"range for {shipping_method}."
+            )
+
+        processing_duration = float(
+            rng.uniform(
+                process_min,
+                process_max,
+            )
+        )
+
+        shipped_at = (
+            order_ts
+            + timedelta(
+                hours=processing_duration
+            )
+        )
+
+        # Shipment record is created before dispatch.
+        created_at = (
+            order_ts
+            + timedelta(
+                hours=(
+                    processing_duration
+                    * 0.70
+                )
+            )
+        )
+
+        transit_min = float(
+            transit_hours[
+                shipping_method
+            ]["min"]
+        )
+
+        transit_max = float(
+            transit_hours[
+                shipping_method
+            ]["max"]
+        )
+
+        if transit_max < transit_min:
+            raise ValueError(
+                "Invalid transit-hours "
+                f"range for {shipping_method}."
+            )
+
+        transit_duration = float(
+            rng.uniform(
+                transit_min,
+                transit_max,
+            )
+        )
+
+        natural_delivery_at = (
+            shipped_at
+            + timedelta(
+                hours=transit_duration
+            )
+        )
+
+        carrier = str(
+            rng.choice(
+                carrier_names,
+                p=carrier_probabilities,
+            )
+        )
+
+        cost_min = float(
+            shipping_costs[
+                shipping_method
+            ]["min"]
+        )
+
+        cost_max = float(
+            shipping_costs[
+                shipping_method
+            ]["max"]
+        )
+
+        if cost_max < cost_min:
+            raise ValueError(
+                "Invalid shipping-cost "
+                f"range for {shipping_method}."
+            )
+
+        shipping_cost = round(
+            float(
+                rng.uniform(
+                    cost_min,
+                    cost_max,
+                )
+            ),
+            2,
+        )
+
+        has_exception = bool(
+            rng.random()
+            < exception_rate
+        )
+
+        if has_exception:
+
+            shipment_status = (
+                "exception"
+            )
+
+            delivered_at = None
+
+            exception_order_ids.append(
+                order_id
+            )
+
+        else:
+
+            is_late = bool(
+                rng.random()
+                < late_rate
+            )
+
+            if is_late:
+
+                late_delay = float(
+                    rng.uniform(
+                        2.0,
+                        36.0,
+                    )
+                )
+
+                delivered_at = max(
+                    natural_delivery_at,
+                    (
+                        expected_delivery_at
+                        + timedelta(
+                            hours=late_delay
+                        )
+                    ),
+                )
+
+            else:
+
+                delivered_at = min(
+                    natural_delivery_at,
+                    expected_delivery_at,
+                )
+
+                delivered_at = max(
+                    delivered_at,
+                    shipped_at,
+                )
+
+            shipment_status = (
+                "delivered"
+            )
+
+        shipment_rows.append(
+            {
+                "shipment_id": (
+                    shipment_id
+                ),
+                "shipment_external_id": (
+                    f"SHP-{shipment_id:08d}"
+                ),
+                "order_id": (
+                    order_id
+                ),
+                "warehouse_id": (
+                    warehouse_id
+                ),
+                "carrier": (
+                    carrier
+                ),
+                "shipment_status": (
+                    shipment_status
+                ),
+                "shipped_at": (
+                    shipped_at
+                ),
+                "expected_delivery_at": (
+                    expected_delivery_at
+                ),
+                "delivered_at": (
+                    delivered_at
+                ),
+                "shipping_cost": (
+                    shipping_cost
+                ),
+                "created_at": (
+                    created_at
+                ),
+            }
+        )
+
+        shipment_id += 1
+
+    shipments = pd.DataFrame(
+        shipment_rows
+    )
+
+    # Orders with unresolved delivery exceptions
+    # have been shipped but not delivered.
+    if exception_order_ids:
+
+        updated_orders.loc[
+            updated_orders[
+                "order_id"
+            ].isin(
+                exception_order_ids
+            ),
+            "order_status",
+        ] = "shipped"
+
+    return (
+        updated_orders,
+        shipments,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CSV output
 # ---------------------------------------------------------------------------
@@ -1677,6 +2081,15 @@ def main() -> None:
         )
     )
 
+
+    orders, shipments = (
+        generate_shipments(
+            orders=orders,
+            config=config,
+            rng=rng,
+        )
+    )
+
     # ------------------------------------------------------------------
     # Save datasets
     # ------------------------------------------------------------------
@@ -1714,6 +2127,12 @@ def main() -> None:
     save_dataset(
         order_items,
         "order_items.csv",
+    )
+
+
+    save_dataset(
+        shipments,
+        "shipments.csv",
     )
 
     # ------------------------------------------------------------------

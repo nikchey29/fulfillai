@@ -44,3 +44,47 @@ inventory:
   initial_stock_max: 500
   reorder_point_min: 20
   reorder_point_max: 100
+
+fulfillment:
+  processing_hours:
+    standard:
+      min: 6
+      max: 36
+    express:
+      min: 2
+      max: 16
+    same_day:
+      min: 0.5
+      max: 4
+
+  transit_hours:
+    standard:
+      min: 48
+      max: 120
+    express:
+      min: 24
+      max: 72
+    same_day:
+      min: 2
+      max: 10
+
+  delivery_exception_rate: 0.045
+  late_delivery_rate: 0.10
+
+  carriers:
+    DHL: 0.24
+    UPS: 0.24
+    FedEx: 0.22
+    DPD: 0.16
+    GLS: 0.14
+
+  shipping_cost:
+    standard:
+      min: 3.50
+      max: 9.00
+    express:
+      min: 8.00
+      max: 18.00
+    same_day:
+      min: 15.00
+      max: 30.00
