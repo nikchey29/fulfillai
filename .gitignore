@@ -28,9 +28,21 @@ venv/
 # Generated data
 data/raw/*
 data/processed/*
+
+# Keep directory structure
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+
+!data/raw/synthetic/
+!data/processed/synthetic/
+
+data/raw/synthetic/*
+data/processed/synthetic/*
+
+!data/raw/synthetic/.gitkeep
+!data/processed/synthetic/.gitkeep
 
 # Model artifacts
 models/*
 !models/.gitkeep
+

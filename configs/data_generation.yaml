@@ -1,0 +1,46 @@
+seed: 42
+
+simulation:
+  start_date: "2025-08-01"
+  end_date: "2026-07-31"
+
+scale:
+  customers: 5000
+  categories: 12
+  products: 300
+  warehouses: 5
+  target_orders: 50000
+
+geography:
+  countries:
+    - US
+    - DE
+    - GB
+    - CA
+
+shipping:
+  methods:
+    standard: 0.70
+    express: 0.23
+    same_day: 0.07
+
+orders:
+  average_items_per_order: 2.2
+  cancellation_rate: 0.035
+
+fulfillment:
+  delivery_exception_rate: 0.045
+  late_delivery_rate: 0.10
+
+demand:
+  weekend_multiplier: 1.18
+  holiday_multiplier: 1.55
+
+products:
+  popularity_distribution: zipf
+
+inventory:
+  initial_stock_min: 50
+  initial_stock_max: 500
+  reorder_point_min: 20
+  reorder_point_max: 100
