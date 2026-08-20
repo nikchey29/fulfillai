@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -1860,6 +1861,1385 @@ def generate_shipments(
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Inventory movement ledger + order lifecycle events
+# ---------------------------------------------------------------------------
+
+def _normalised_probabilities(
+    mapping: dict[str, Any],
+    *,
+    label: str,
+) -> tuple[list[str], np.ndarray]:
+    """Return deterministic choice labels and normalized probabilities."""
+
+    names = list(mapping.keys())
+
+    if not names:
+        raise ValueError(
+            f"{label} must contain at least one option."
+        )
+
+    probabilities = np.array(
+        [
+            float(mapping[name])
+            for name in names
+        ],
+        dtype=float,
+    )
+
+    if (probabilities < 0).any():
+        raise ValueError(
+            f"{label} cannot contain negative probabilities."
+        )
+
+    total = float(
+        probabilities.sum()
+    )
+
+    if total <= 0:
+        raise ValueError(
+            f"{label} probabilities must sum to a positive value."
+        )
+
+    return (
+        names,
+        probabilities / total,
+    )
+
+
+def _sample_config_value(
+    rng: np.random.Generator,
+    value: Any,
+    *,
+    default_min: float,
+    default_max: float,
+    label: str,
+) -> float:
+    """
+    Sample a scalar or min/max configuration value.
+
+    Supported shapes:
+    - scalar: 5
+    - mapping: {min: 2, max: 10}
+    - two-item list/tuple: [2, 10]
+    """
+
+    if value is None:
+        minimum = float(default_min)
+        maximum = float(default_max)
+
+    elif isinstance(
+        value,
+        dict,
+    ):
+        minimum = float(
+            value.get(
+                "min",
+                default_min,
+            )
+        )
+
+        maximum = float(
+            value.get(
+                "max",
+                minimum,
+            )
+        )
+
+    elif isinstance(
+        value,
+        (
+            list,
+            tuple,
+        ),
+    ):
+        if len(value) != 2:
+            raise ValueError(
+                f"{label} list/tuple must contain exactly two values."
+            )
+
+        minimum = float(
+            value[0]
+        )
+        maximum = float(
+            value[1]
+        )
+
+    else:
+        minimum = float(value)
+        maximum = float(value)
+
+    if minimum < 0:
+        raise ValueError(
+            f"{label} cannot be negative."
+        )
+
+    if maximum < minimum:
+        raise ValueError(
+            f"{label} max must be >= min."
+        )
+
+    if maximum == minimum:
+        return minimum
+
+    return float(
+        rng.uniform(
+            minimum,
+            maximum,
+        )
+    )
+
+
+def _lifecycle_delay(
+    timing: dict[str, Any],
+    key: str,
+    rng: np.random.Generator,
+    *,
+    default_min: float,
+    default_max: float,
+    unit: str,
+) -> timedelta:
+    """Sample a configured lifecycle delay."""
+
+    value = _sample_config_value(
+        rng,
+        timing.get(key),
+        default_min=default_min,
+        default_max=default_max,
+        label=f"lifecycle.timing.{key}",
+    )
+
+    if unit == "minutes":
+        return timedelta(
+            minutes=value
+        )
+
+    if unit == "hours":
+        return timedelta(
+            hours=value
+        )
+
+    raise ValueError(
+        f"Unsupported lifecycle delay unit: {unit}"
+    )
+
+
+def _json_payload(
+    payload: dict[str, Any] | None = None,
+) -> str:
+    """Serialize event payloads deterministically for JSONB loading later."""
+
+    return json.dumps(
+        payload or {},
+        sort_keys=True,
+        separators=(
+            ",",
+            ":",
+        ),
+    )
+
+
+def generate_inventory_movements_and_order_events(
+    orders: pd.DataFrame,
+    order_items: pd.DataFrame,
+    shipments: pd.DataFrame,
+    inventory: pd.DataFrame,
+    config: dict[str, Any],
+    rng: np.random.Generator,
+    simulation_start: datetime,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate the FulfillAI inventory ledger and order lifecycle event stream.
+
+    Inventory accounting semantics:
+    - receipt: physical stock enters a warehouse
+    - reservation: units are placed on hold for an order
+    - release: a reservation is reversed
+    - shipment: physical stock leaves the warehouse
+    - return/adjustment remain supported by the SQL schema for later phases
+
+    Opening inventory is represented by one receipt movement per inventory
+    position. Replenishment receipts are inserted deterministically whenever
+    projected available stock would otherwise be insufficient for a
+    reservation or shipment.
+
+    Lifecycle behavior:
+    - all orders emit order_created
+    - cancellation stage controls how far a cancelled order progresses
+    - non-cancelled orders progress through payment, reservation, processing,
+      packing, shipment creation, dispatch, and delivery/exception
+    """
+
+    lifecycle = dict(
+        config.get(
+            "lifecycle",
+            {},
+        )
+    )
+
+    timing = dict(
+        lifecycle.get(
+            "timing",
+            {},
+        )
+    )
+
+    cancellation_stages = dict(
+        lifecycle.get(
+            "cancellation_stages",
+            {
+                "pre_payment": 0.30,
+                "post_payment": 0.30,
+                "post_reservation": 0.40,
+            },
+        )
+    )
+
+    exception_reasons = dict(
+        lifecycle.get(
+            "exception_reasons",
+            {
+                "carrier_delay": 0.35,
+                "weather": 0.20,
+                "address_issue": 0.15,
+                "damaged_in_transit": 0.15,
+                "lost_in_transit": 0.10,
+                "other": 0.05,
+            },
+        )
+    )
+
+    event_source = str(
+        lifecycle.get(
+            "event_source",
+            "synthetic_generator",
+        )
+    )
+
+    (
+        cancellation_stage_names,
+        cancellation_stage_probabilities,
+    ) = _normalised_probabilities(
+        cancellation_stages,
+        label=(
+            "lifecycle.cancellation_stages"
+        ),
+    )
+
+    (
+        exception_reason_names,
+        exception_reason_probabilities,
+    ) = _normalised_probabilities(
+        exception_reasons,
+        label=(
+            "lifecycle.exception_reasons"
+        ),
+    )
+
+    # ---------------------------------------------------------------
+    # Fast lookup structures
+    # ---------------------------------------------------------------
+
+    item_map: dict[
+        int,
+        list[
+            tuple[int, int]
+        ],
+    ] = {}
+
+    for order_id, group in (
+        order_items.groupby(
+            "order_id",
+            sort=False,
+        )
+    ):
+        item_map[
+            int(order_id)
+        ] = [
+            (
+                int(row.product_id),
+                int(row.quantity),
+            )
+            for row in group.itertuples(
+                index=False
+            )
+        ]
+
+    shipment_map = {
+        int(row.order_id): row
+        for row in shipments.itertuples(
+            index=False
+        )
+    }
+
+    inventory_state: dict[
+        tuple[int, int],
+        dict[str, int],
+    ] = {}
+
+    reorder_points: dict[
+        tuple[int, int],
+        int,
+    ] = {}
+
+    for row in inventory.itertuples(
+        index=False
+    ):
+        key = (
+            int(row.warehouse_id),
+            int(row.product_id),
+        )
+
+        inventory_state[key] = {
+            "on_hand": int(
+                row.on_hand_qty
+            ),
+            "reserved": int(
+                row.reserved_qty
+            ),
+        }
+
+        reorder_points[key] = int(
+            row.reorder_point
+        )
+
+    # ---------------------------------------------------------------
+    # Event builders
+    # ---------------------------------------------------------------
+
+    event_rows: list[
+        dict[str, Any]
+    ] = []
+
+    inventory_actions: list[
+        dict[str, Any]
+    ] = []
+
+    event_id = 1
+    action_sequence = 1
+
+    def add_order_event(
+        *,
+        order_id: int,
+        warehouse_id: int,
+        event_type: str,
+        event_ts: datetime,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        nonlocal event_id
+
+        event_rows.append(
+            {
+                "event_id": event_id,
+                "event_key": (
+                    f"EVT-{event_id:09d}"
+                ),
+                "order_id": order_id,
+                "warehouse_id": (
+                    warehouse_id
+                ),
+                "event_type": event_type,
+                "event_ts": event_ts,
+                "source": event_source,
+                "payload": (
+                    _json_payload(
+                        payload
+                    )
+                ),
+                "ingested_at": (
+                    event_ts
+                    + timedelta(
+                        seconds=1
+                    )
+                ),
+            }
+        )
+
+        event_id += 1
+
+    def add_inventory_action(
+        *,
+        warehouse_id: int,
+        product_id: int,
+        order_id: int,
+        movement_type: str,
+        quantity_change: int,
+        event_ts: datetime,
+    ) -> None:
+        nonlocal action_sequence
+
+        inventory_actions.append(
+            {
+                "sequence": (
+                    action_sequence
+                ),
+                "warehouse_id": (
+                    warehouse_id
+                ),
+                "product_id": (
+                    product_id
+                ),
+                "order_id": (
+                    order_id
+                ),
+                "movement_type": (
+                    movement_type
+                ),
+                "quantity_change": (
+                    quantity_change
+                ),
+                "event_ts": event_ts,
+            }
+        )
+
+        action_sequence += 1
+
+    # ---------------------------------------------------------------
+    # Order lifecycle + candidate inventory actions
+    # ---------------------------------------------------------------
+
+    sorted_orders = (
+        orders.sort_values(
+            by=[
+                "order_ts",
+                "order_id",
+            ]
+        )
+    )
+
+    for order in sorted_orders.itertuples(
+        index=False
+    ):
+        order_id = int(
+            order.order_id
+        )
+
+        warehouse_id = int(
+            order.warehouse_id
+        )
+
+        order_ts = (
+            pd.Timestamp(
+                order.order_ts
+            )
+            .to_pydatetime()
+        )
+
+        items = item_map.get(
+            order_id,
+            [],
+        )
+
+        if not items:
+            raise ValueError(
+                f"Order {order_id} has no order items."
+            )
+
+        total_units = sum(
+            quantity
+            for _, quantity
+            in items
+        )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="order_created",
+            event_ts=order_ts,
+            payload={
+                "order_external_id": (
+                    str(
+                        order.order_external_id
+                    )
+                ),
+                "shipping_method": (
+                    str(
+                        order.shipping_method
+                    )
+                ),
+            },
+        )
+
+        payment_at = (
+            order_ts
+            + _lifecycle_delay(
+                timing,
+                "payment_confirmation_minutes",
+                rng,
+                default_min=2.0,
+                default_max=20.0,
+                unit="minutes",
+            )
+        )
+
+        reservation_at = (
+            payment_at
+            + _lifecycle_delay(
+                timing,
+                "inventory_reservation_minutes",
+                rng,
+                default_min=1.0,
+                default_max=15.0,
+                unit="minutes",
+            )
+        )
+
+        processing_at = (
+            reservation_at
+            + _lifecycle_delay(
+                timing,
+                "processing_start_minutes",
+                rng,
+                default_min=2.0,
+                default_max=30.0,
+                unit="minutes",
+            )
+        )
+
+        packed_at = (
+            processing_at
+            + _lifecycle_delay(
+                timing,
+                "packing_hours",
+                rng,
+                default_min=0.25,
+                default_max=2.0,
+                unit="hours",
+            )
+        )
+
+        if (
+            str(order.order_status)
+            == "cancelled"
+        ):
+            cancellation_stage = str(
+                rng.choice(
+                    cancellation_stage_names,
+                    p=(
+                        cancellation_stage_probabilities
+                    ),
+                )
+            )
+
+            cancellation_delay = (
+                _lifecycle_delay(
+                    timing,
+                    "cancellation_delay_minutes",
+                    rng,
+                    default_min=5.0,
+                    default_max=90.0,
+                    unit="minutes",
+                )
+            )
+
+            if (
+                cancellation_stage
+                == "pre_payment"
+            ):
+                cancelled_at = (
+                    order_ts
+                    + cancellation_delay
+                )
+
+            elif (
+                cancellation_stage
+                == "post_payment"
+            ):
+                add_order_event(
+                    order_id=order_id,
+                    warehouse_id=warehouse_id,
+                    event_type=(
+                        "payment_confirmed"
+                    ),
+                    event_ts=payment_at,
+                    payload={
+                        "payment_method": (
+                            str(
+                                order.payment_method
+                            )
+                        ),
+                    },
+                )
+
+                cancelled_at = (
+                    payment_at
+                    + cancellation_delay
+                )
+
+            elif (
+                cancellation_stage
+                == "post_reservation"
+            ):
+                add_order_event(
+                    order_id=order_id,
+                    warehouse_id=warehouse_id,
+                    event_type=(
+                        "payment_confirmed"
+                    ),
+                    event_ts=payment_at,
+                    payload={
+                        "payment_method": (
+                            str(
+                                order.payment_method
+                            )
+                        ),
+                    },
+                )
+
+                add_order_event(
+                    order_id=order_id,
+                    warehouse_id=warehouse_id,
+                    event_type=(
+                        "inventory_reserved"
+                    ),
+                    event_ts=reservation_at,
+                    payload={
+                        "line_count": len(items),
+                        "units": total_units,
+                    },
+                )
+
+                for (
+                    product_id,
+                    quantity,
+                ) in items:
+                    add_inventory_action(
+                        warehouse_id=(
+                            warehouse_id
+                        ),
+                        product_id=(
+                            product_id
+                        ),
+                        order_id=order_id,
+                        movement_type=(
+                            "reservation"
+                        ),
+                        quantity_change=(
+                            -quantity
+                        ),
+                        event_ts=(
+                            reservation_at
+                        ),
+                    )
+
+                cancelled_at = (
+                    reservation_at
+                    + cancellation_delay
+                )
+
+            else:
+                raise ValueError(
+                    "Unsupported cancellation stage "
+                    f"{cancellation_stage!r}."
+                )
+
+            add_order_event(
+                order_id=order_id,
+                warehouse_id=warehouse_id,
+                event_type="order_cancelled",
+                event_ts=cancelled_at,
+                payload={
+                    "stage": (
+                        cancellation_stage
+                    )
+                },
+            )
+
+            if (
+                cancellation_stage
+                == "post_reservation"
+            ):
+                release_at = (
+                    cancelled_at
+                    + _lifecycle_delay(
+                        timing,
+                        "inventory_release_minutes",
+                        rng,
+                        default_min=1.0,
+                        default_max=15.0,
+                        unit="minutes",
+                    )
+                )
+
+                add_order_event(
+                    order_id=order_id,
+                    warehouse_id=warehouse_id,
+                    event_type=(
+                        "inventory_released"
+                    ),
+                    event_ts=release_at,
+                    payload={
+                        "line_count": len(items),
+                        "units": total_units,
+                    },
+                )
+
+                for (
+                    product_id,
+                    quantity,
+                ) in items:
+                    add_inventory_action(
+                        warehouse_id=(
+                            warehouse_id
+                        ),
+                        product_id=(
+                            product_id
+                        ),
+                        order_id=order_id,
+                        movement_type="release",
+                        quantity_change=(
+                            quantity
+                        ),
+                        event_ts=release_at,
+                    )
+
+            continue
+
+        # -----------------------------------------------------------
+        # Non-cancelled path
+        # -----------------------------------------------------------
+
+        shipment = shipment_map.get(
+            order_id
+        )
+
+        if shipment is None:
+            raise ValueError(
+                "Non-cancelled order "
+                f"{order_id} has no shipment."
+            )
+
+        shipment_created_at = (
+            pd.Timestamp(
+                shipment.created_at
+            )
+            .to_pydatetime()
+        )
+
+        shipped_at = (
+            pd.Timestamp(
+                shipment.shipped_at
+            )
+            .to_pydatetime()
+        )
+
+        # The shipment generator already owns the authoritative shipment
+        # timestamps. If configured lifecycle delays would cross that
+        # boundary, compress the pre-shipment milestones into the available
+        # interval while preserving their order.
+        if (
+            packed_at
+            >= shipment_created_at
+        ):
+            span_seconds = max(
+                (
+                    shipment_created_at
+                    - order_ts
+                ).total_seconds(),
+                5.0,
+            )
+
+            payment_at = (
+                order_ts
+                + timedelta(
+                    seconds=(
+                        span_seconds
+                        * 0.15
+                    )
+                )
+            )
+
+            reservation_at = (
+                order_ts
+                + timedelta(
+                    seconds=(
+                        span_seconds
+                        * 0.30
+                    )
+                )
+            )
+
+            processing_at = (
+                order_ts
+                + timedelta(
+                    seconds=(
+                        span_seconds
+                        * 0.50
+                    )
+                )
+            )
+
+            packed_at = (
+                order_ts
+                + timedelta(
+                    seconds=(
+                        span_seconds
+                        * 0.80
+                    )
+                )
+            )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="payment_confirmed",
+            event_ts=payment_at,
+            payload={
+                "payment_method": (
+                    str(
+                        order.payment_method
+                    )
+                ),
+            },
+        )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="inventory_reserved",
+            event_ts=reservation_at,
+            payload={
+                "line_count": len(items),
+                "units": total_units,
+            },
+        )
+
+        for (
+            product_id,
+            quantity,
+        ) in items:
+            add_inventory_action(
+                warehouse_id=warehouse_id,
+                product_id=product_id,
+                order_id=order_id,
+                movement_type="reservation",
+                quantity_change=-quantity,
+                event_ts=reservation_at,
+            )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="processing_started",
+            event_ts=processing_at,
+        )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="order_packed",
+            event_ts=packed_at,
+        )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="shipment_created",
+            event_ts=shipment_created_at,
+            payload={
+                "shipment_id": int(
+                    shipment.shipment_id
+                ),
+                "shipment_external_id": (
+                    str(
+                        shipment.shipment_external_id
+                    )
+                ),
+                "carrier": (
+                    str(
+                        shipment.carrier
+                    )
+                ),
+            },
+        )
+
+        add_order_event(
+            order_id=order_id,
+            warehouse_id=warehouse_id,
+            event_type="order_shipped",
+            event_ts=shipped_at,
+            payload={
+                "shipment_id": int(
+                    shipment.shipment_id
+                )
+            },
+        )
+
+        for (
+            product_id,
+            quantity,
+        ) in items:
+            add_inventory_action(
+                warehouse_id=warehouse_id,
+                product_id=product_id,
+                order_id=order_id,
+                movement_type="shipment",
+                quantity_change=-quantity,
+                event_ts=shipped_at,
+            )
+
+        if (
+            str(
+                shipment.shipment_status
+            )
+            == "delivered"
+        ):
+            delivered_at = (
+                pd.Timestamp(
+                    shipment.delivered_at
+                )
+                .to_pydatetime()
+            )
+
+            add_order_event(
+                order_id=order_id,
+                warehouse_id=warehouse_id,
+                event_type=(
+                    "order_delivered"
+                ),
+                event_ts=delivered_at,
+                payload={
+                    "shipment_id": int(
+                        shipment.shipment_id
+                    )
+                },
+            )
+
+        elif (
+            str(
+                shipment.shipment_status
+            )
+            == "exception"
+        ):
+            expected_delivery_at = (
+                pd.Timestamp(
+                    shipment.expected_delivery_at
+                )
+                .to_pydatetime()
+            )
+
+            exception_at = max(
+                expected_delivery_at,
+                (
+                    shipped_at
+                    + timedelta(
+                        minutes=1
+                    )
+                ),
+            )
+
+            exception_reason = str(
+                rng.choice(
+                    exception_reason_names,
+                    p=(
+                        exception_reason_probabilities
+                    ),
+                )
+            )
+
+            add_order_event(
+                order_id=order_id,
+                warehouse_id=warehouse_id,
+                event_type=(
+                    "delivery_exception"
+                ),
+                event_ts=exception_at,
+                payload={
+                    "shipment_id": int(
+                        shipment.shipment_id
+                    ),
+                    "reason": (
+                        exception_reason
+                    ),
+                },
+            )
+
+        else:
+            raise ValueError(
+                "Unsupported shipment status "
+                f"{shipment.shipment_status!r}."
+            )
+
+    # ---------------------------------------------------------------
+    # Build chronological inventory movement ledger
+    # ---------------------------------------------------------------
+
+    movement_rows: list[
+        dict[str, Any]
+    ] = []
+
+    movement_id = 1
+
+    def append_movement(
+        *,
+        warehouse_id: int,
+        product_id: int,
+        order_id: int | None,
+        movement_type: str,
+        quantity_change: int,
+        event_ts: datetime,
+    ) -> None:
+        nonlocal movement_id
+
+        if quantity_change == 0:
+            raise ValueError(
+                "Inventory movement quantity_change "
+                "cannot be zero."
+            )
+
+        movement_rows.append(
+            {
+                "movement_id": movement_id,
+                "warehouse_id": (
+                    warehouse_id
+                ),
+                "product_id": (
+                    product_id
+                ),
+                "order_id": order_id,
+                "movement_type": (
+                    movement_type
+                ),
+                "quantity_change": (
+                    quantity_change
+                ),
+                "event_ts": event_ts,
+                "created_at": event_ts,
+            }
+        )
+
+        movement_id += 1
+
+    # Opening inventory receipts make the physical ledger auditable from
+    # its first state.
+    for row in (
+        inventory.sort_values(
+            by=[
+                "warehouse_id",
+                "product_id",
+            ]
+        )
+        .itertuples(
+            index=False
+        )
+    ):
+        opening_quantity = int(
+            row.on_hand_qty
+        )
+
+        if opening_quantity > 0:
+            append_movement(
+                warehouse_id=int(
+                    row.warehouse_id
+                ),
+                product_id=int(
+                    row.product_id
+                ),
+                order_id=None,
+                movement_type="receipt",
+                quantity_change=(
+                    opening_quantity
+                ),
+                event_ts=(
+                    simulation_start
+                ),
+            )
+
+    inventory_actions.sort(
+        key=lambda action: (
+            action["event_ts"],
+            action["sequence"],
+        )
+    )
+
+    for action in inventory_actions:
+        warehouse_id = int(
+            action["warehouse_id"]
+        )
+
+        product_id = int(
+            action["product_id"]
+        )
+
+        order_id = int(
+            action["order_id"]
+        )
+
+        movement_type = str(
+            action["movement_type"]
+        )
+
+        quantity_change = int(
+            action["quantity_change"]
+        )
+
+        event_ts = action[
+            "event_ts"
+        ]
+
+        key = (
+            warehouse_id,
+            product_id,
+        )
+
+        if key not in inventory_state:
+            raise ValueError(
+                "Inventory action references "
+                "an unknown warehouse/product pair: "
+                f"{key}."
+            )
+
+        state = inventory_state[
+            key
+        ]
+
+        if movement_type == "reservation":
+            quantity = abs(
+                quantity_change
+            )
+
+            available = (
+                state["on_hand"]
+                - state["reserved"]
+            )
+
+            if available < quantity:
+                shortage = (
+                    quantity
+                    - available
+                )
+
+                reorder_point = (
+                    reorder_points[
+                        key
+                    ]
+                )
+
+                receipt_quantity = max(
+                    shortage,
+                    max(
+                        reorder_point * 2,
+                        50,
+                    ),
+                )
+
+                receipt_ts = max(
+                    (
+                        simulation_start
+                        + timedelta(
+                            seconds=1
+                        )
+                    ),
+                    (
+                        event_ts
+                        - timedelta(
+                            seconds=1
+                        )
+                    ),
+                )
+
+                append_movement(
+                    warehouse_id=(
+                        warehouse_id
+                    ),
+                    product_id=(
+                        product_id
+                    ),
+                    order_id=None,
+                    movement_type="receipt",
+                    quantity_change=(
+                        receipt_quantity
+                    ),
+                    event_ts=receipt_ts,
+                )
+
+                state["on_hand"] += (
+                    receipt_quantity
+                )
+
+            state["reserved"] += (
+                quantity
+            )
+
+        elif movement_type == "release":
+            quantity = (
+                quantity_change
+            )
+
+            if (
+                quantity
+                > state["reserved"]
+            ):
+                raise ValueError(
+                    "Inventory release exceeds "
+                    "currently reserved quantity for "
+                    f"warehouse/product {key}."
+                )
+
+            state["reserved"] -= (
+                quantity
+            )
+
+        elif movement_type == "shipment":
+            quantity = abs(
+                quantity_change
+            )
+
+            if (
+                state["on_hand"]
+                < quantity
+            ):
+                shortage = (
+                    quantity
+                    - state["on_hand"]
+                )
+
+                reorder_point = (
+                    reorder_points[
+                        key
+                    ]
+                )
+
+                receipt_quantity = max(
+                    shortage,
+                    max(
+                        reorder_point * 2,
+                        50,
+                    ),
+                )
+
+                receipt_ts = max(
+                    (
+                        simulation_start
+                        + timedelta(
+                            seconds=1
+                        )
+                    ),
+                    (
+                        event_ts
+                        - timedelta(
+                            seconds=1
+                        )
+                    ),
+                )
+
+                append_movement(
+                    warehouse_id=(
+                        warehouse_id
+                    ),
+                    product_id=(
+                        product_id
+                    ),
+                    order_id=None,
+                    movement_type="receipt",
+                    quantity_change=(
+                        receipt_quantity
+                    ),
+                    event_ts=receipt_ts,
+                )
+
+                state["on_hand"] += (
+                    receipt_quantity
+                )
+
+            state["on_hand"] -= (
+                quantity
+            )
+
+            # Dispatch consumes the corresponding reservation.
+            state["reserved"] = max(
+                0,
+                (
+                    state["reserved"]
+                    - quantity
+                ),
+            )
+
+        else:
+            raise ValueError(
+                "Unsupported generated inventory "
+                f"movement type: {movement_type}."
+            )
+
+        append_movement(
+            warehouse_id=warehouse_id,
+            product_id=product_id,
+            order_id=order_id,
+            movement_type=movement_type,
+            quantity_change=(
+                quantity_change
+            ),
+            event_ts=event_ts,
+        )
+
+    inventory_movements = (
+        pd.DataFrame(
+            movement_rows
+        )
+        .sort_values(
+            by=[
+                "event_ts",
+                "movement_id",
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # Renumber after chronological sort so movement_id itself reflects ledger
+    # order and remains deterministic.
+    inventory_movements[
+        "movement_id"
+    ] = range(
+        1,
+        len(
+            inventory_movements
+        ) + 1,
+    )
+
+    order_events = (
+        pd.DataFrame(
+            event_rows
+        )
+        .sort_values(
+            by=[
+                "event_ts",
+                "event_id",
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # Preserve event_key uniqueness while also making event_id chronological.
+    order_events[
+        "event_id"
+    ] = range(
+        1,
+        len(
+            order_events
+        ) + 1,
+    )
+
+    order_events[
+        "event_key"
+    ] = [
+        f"EVT-{event_id:09d}"
+        for event_id
+        in order_events[
+            "event_id"
+        ]
+    ]
+
+    return (
+        inventory_movements,
+        order_events,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CSV output
 # ---------------------------------------------------------------------------
@@ -2090,6 +3470,21 @@ def main() -> None:
         )
     )
 
+    (
+        inventory_movements,
+        order_events,
+    ) = generate_inventory_movements_and_order_events(
+        orders=orders,
+        order_items=order_items,
+        shipments=shipments,
+        inventory=inventory,
+        config=config,
+        rng=rng,
+        simulation_start=(
+            simulation_start
+        ),
+    )
+
     # ------------------------------------------------------------------
     # Save datasets
     # ------------------------------------------------------------------
@@ -2133,6 +3528,16 @@ def main() -> None:
     save_dataset(
         shipments,
         "shipments.csv",
+    )
+
+    save_dataset(
+        inventory_movements,
+        "inventory_movements.csv",
+    )
+
+    save_dataset(
+        order_events,
+        "order_events.csv",
     )
 
     # ------------------------------------------------------------------
@@ -2182,6 +3587,21 @@ def main() -> None:
     print(
         f"  order_items        : "
         f"{len(order_items):,}"
+    )
+
+    print(
+        f"  shipments          : "
+        f"{len(shipments):,}"
+    )
+
+    print(
+        f"  inventory_movements: "
+        f"{len(inventory_movements):,}"
+    )
+
+    print(
+        f"  order_events       : "
+        f"{len(order_events):,}"
     )
 
     print()

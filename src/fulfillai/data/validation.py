@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -1080,6 +1081,1128 @@ def validate_shipments(
     }
 
 
+
+# ============================================================
+# Inventory Movements
+# ============================================================
+
+def validate_inventory_movements(
+    inventory_movements: pd.DataFrame,
+    inventory: pd.DataFrame,
+    orders: pd.DataFrame,
+    order_items: pd.DataFrame,
+    warehouses: pd.DataFrame,
+    products: pd.DataFrame,
+    order_events: pd.DataFrame,
+    config: dict,
+) -> dict:
+
+    required = {
+        "movement_id",
+        "warehouse_id",
+        "product_id",
+        "order_id",
+        "movement_type",
+        "quantity_change",
+        "event_ts",
+        "created_at",
+    }
+
+    assert required.issubset(
+        inventory_movements.columns
+    ), (
+        "inventory_movements.csv missing columns: "
+        f"{required - set(inventory_movements.columns)}"
+    )
+
+    assert_no_missing(
+        inventory_movements,
+        [
+            "movement_id",
+            "warehouse_id",
+            "product_id",
+            "movement_type",
+            "quantity_change",
+            "event_ts",
+            "created_at",
+        ],
+        "inventory_movements",
+    )
+
+    assert_unique(
+        inventory_movements,
+        "movement_id",
+        "inventory_movements",
+    )
+
+    allowed_types = {
+        "receipt",
+        "reservation",
+        "release",
+        "shipment",
+        "adjustment",
+        "return",
+    }
+
+    invalid_types = set(
+        inventory_movements[
+            "movement_type"
+        ].dropna()
+    ) - allowed_types
+
+    assert not invalid_types, (
+        "Invalid inventory movement types: "
+        f"{invalid_types}"
+    )
+
+    assert (
+        inventory_movements[
+            "quantity_change"
+        ] != 0
+    ).all(), (
+        "Zero-quantity inventory movements detected"
+    )
+
+    positive_types = {
+        "receipt",
+        "release",
+        "return",
+    }
+
+    negative_types = {
+        "reservation",
+        "shipment",
+    }
+
+    for movement_type in positive_types:
+        rows = inventory_movements[
+            inventory_movements[
+                "movement_type"
+            ] == movement_type
+        ]
+
+        assert (
+            rows[
+                "quantity_change"
+            ] > 0
+        ).all(), (
+            f"{movement_type} movements must be positive"
+        )
+
+    for movement_type in negative_types:
+        rows = inventory_movements[
+            inventory_movements[
+                "movement_type"
+            ] == movement_type
+        ]
+
+        assert (
+            rows[
+                "quantity_change"
+            ] < 0
+        ).all(), (
+            f"{movement_type} movements must be negative"
+        )
+
+    unknown_warehouses = (
+        ~inventory_movements[
+            "warehouse_id"
+        ].isin(
+            warehouses[
+                "warehouse_id"
+            ]
+        )
+    ).sum()
+
+    assert unknown_warehouses == 0, (
+        f"{unknown_warehouses} inventory movements "
+        "reference unknown warehouses"
+    )
+
+    unknown_products = (
+        ~inventory_movements[
+            "product_id"
+        ].isin(
+            products[
+                "product_id"
+            ]
+        )
+    ).sum()
+
+    assert unknown_products == 0, (
+        f"{unknown_products} inventory movements "
+        "reference unknown products"
+    )
+
+    order_linked = (
+        inventory_movements[
+            "order_id"
+        ].dropna()
+    )
+
+    unknown_orders = (
+        ~order_linked.isin(
+            orders[
+                "order_id"
+            ]
+        )
+    ).sum()
+
+    assert unknown_orders == 0, (
+        f"{unknown_orders} inventory movements "
+        "reference unknown orders"
+    )
+
+    receipt_orders = (
+        inventory_movements.loc[
+            inventory_movements[
+                "movement_type"
+            ] == "receipt",
+            "order_id",
+        ]
+    )
+
+    assert (
+        receipt_orders.isna().all()
+    ), (
+        "Receipt movements should not be tied "
+        "directly to customer orders"
+    )
+
+    transactional_movements = (
+        inventory_movements[
+            inventory_movements[
+                "movement_type"
+            ].isin(
+                {
+                    "reservation",
+                    "release",
+                    "shipment",
+                }
+            )
+        ]
+    )
+
+    assert (
+        transactional_movements[
+            "order_id"
+        ].notna().all()
+    ), (
+        "Reservation/release/shipment movements "
+        "must reference an order"
+    )
+
+    # --------------------------------------------------------
+    # Opening inventory reconciliation
+    # --------------------------------------------------------
+
+    simulation_start = pd.Timestamp(
+        config[
+            "simulation"
+        ][
+            "start_date"
+        ],
+        tz="UTC",
+    )
+
+    opening_receipts = (
+        inventory_movements[
+            (
+                inventory_movements[
+                    "movement_type"
+                ] == "receipt"
+            )
+            & (
+                inventory_movements[
+                    "event_ts"
+                ] == simulation_start
+            )
+        ]
+    )
+
+    opening = (
+        opening_receipts
+        .groupby(
+            [
+                "warehouse_id",
+                "product_id",
+            ],
+            as_index=False,
+        )[
+            "quantity_change"
+        ]
+        .sum()
+        .rename(
+            columns={
+                "quantity_change":
+                    "opening_quantity"
+            }
+        )
+    )
+
+    expected_opening = (
+        inventory[
+            [
+                "warehouse_id",
+                "product_id",
+                "on_hand_qty",
+            ]
+        ]
+        .rename(
+            columns={
+                "on_hand_qty":
+                    "expected_opening"
+            }
+        )
+    )
+
+    opening_check = (
+        expected_opening.merge(
+            opening,
+            on=[
+                "warehouse_id",
+                "product_id",
+            ],
+            how="left",
+        )
+        .fillna(
+            {
+                "opening_quantity": 0
+            }
+        )
+    )
+
+    opening_mismatches = (
+        opening_check[
+            "opening_quantity"
+        ]
+        != opening_check[
+            "expected_opening"
+        ]
+    ).sum()
+
+    assert opening_mismatches == 0, (
+        f"{opening_mismatches} opening inventory "
+        "receipt mismatches detected"
+    )
+
+    # --------------------------------------------------------
+    # Order-line reconciliation
+    # --------------------------------------------------------
+
+    reserved_order_ids = set(
+        order_events.loc[
+            order_events[
+                "event_type"
+            ] == "inventory_reserved",
+            "order_id",
+        ].astype(int)
+    )
+
+    released_order_ids = set(
+        order_events.loc[
+            order_events[
+                "event_type"
+            ] == "inventory_released",
+            "order_id",
+        ].astype(int)
+    )
+
+    shipped_order_ids = set(
+        order_events.loc[
+            order_events[
+                "event_type"
+            ] == "order_shipped",
+            "order_id",
+        ].astype(int)
+    )
+
+    def movement_totals(
+        movement_type: str,
+    ) -> pd.DataFrame:
+        rows = inventory_movements[
+            inventory_movements[
+                "movement_type"
+            ] == movement_type
+        ].copy()
+
+        if rows.empty:
+            return pd.DataFrame(
+                columns=[
+                    "order_id",
+                    "product_id",
+                    "movement_units",
+                ]
+            )
+
+        rows[
+            "movement_units"
+        ] = rows[
+            "quantity_change"
+        ].abs()
+
+        return (
+            rows.groupby(
+                [
+                    "order_id",
+                    "product_id",
+                ],
+                as_index=False,
+            )[
+                "movement_units"
+            ]
+            .sum()
+        )
+
+    def expected_item_totals(
+        order_ids: set[int],
+    ) -> pd.DataFrame:
+        rows = order_items[
+            order_items[
+                "order_id"
+            ].isin(
+                order_ids
+            )
+        ]
+
+        return (
+            rows.groupby(
+                [
+                    "order_id",
+                    "product_id",
+                ],
+                as_index=False,
+            )[
+                "quantity"
+            ]
+            .sum()
+            .rename(
+                columns={
+                    "quantity":
+                        "expected_units"
+                }
+            )
+        )
+
+    for (
+        movement_type,
+        relevant_order_ids,
+    ) in [
+        (
+            "reservation",
+            reserved_order_ids,
+        ),
+        (
+            "release",
+            released_order_ids,
+        ),
+        (
+            "shipment",
+            shipped_order_ids,
+        ),
+    ]:
+        actual = movement_totals(
+            movement_type
+        )
+
+        expected = expected_item_totals(
+            relevant_order_ids
+        )
+
+        comparison = (
+            expected.merge(
+                actual,
+                on=[
+                    "order_id",
+                    "product_id",
+                ],
+                how="outer",
+            )
+            .fillna(0)
+        )
+
+        mismatches = (
+            comparison[
+                "expected_units"
+            ]
+            != comparison[
+                "movement_units"
+            ]
+        ).sum()
+
+        assert mismatches == 0, (
+            f"{mismatches} {movement_type} movement "
+            "quantities do not match order items"
+        )
+
+    # --------------------------------------------------------
+    # Chronological inventory-state integrity
+    # --------------------------------------------------------
+
+    state: dict[
+        tuple[int, int],
+        dict[str, int],
+    ] = {}
+
+    sorted_movements = (
+        inventory_movements.sort_values(
+            by=[
+                "event_ts",
+                "movement_id",
+            ]
+        )
+    )
+
+    for movement in (
+        sorted_movements.itertuples(
+            index=False
+        )
+    ):
+        key = (
+            int(
+                movement.warehouse_id
+            ),
+            int(
+                movement.product_id
+            ),
+        )
+
+        current = state.setdefault(
+            key,
+            {
+                "on_hand": 0,
+                "reserved": 0,
+            },
+        )
+
+        quantity = int(
+            movement.quantity_change
+        )
+
+        movement_type = str(
+            movement.movement_type
+        )
+
+        if movement_type in {
+            "receipt",
+            "return",
+        }:
+            current[
+                "on_hand"
+            ] += quantity
+
+        elif movement_type == "adjustment":
+            current[
+                "on_hand"
+            ] += quantity
+
+        elif movement_type == "reservation":
+            units = abs(quantity)
+
+            available = (
+                current["on_hand"]
+                - current["reserved"]
+            )
+
+            assert available >= units, (
+                "Reservation exceeds available stock "
+                f"for warehouse/product {key}"
+            )
+
+            current[
+                "reserved"
+            ] += units
+
+        elif movement_type == "release":
+            units = quantity
+
+            assert (
+                current["reserved"]
+                >= units
+            ), (
+                "Release exceeds reserved stock "
+                f"for warehouse/product {key}"
+            )
+
+            current[
+                "reserved"
+            ] -= units
+
+        elif movement_type == "shipment":
+            units = abs(quantity)
+
+            assert (
+                current["on_hand"]
+                >= units
+            ), (
+                "Shipment drives physical inventory "
+                f"negative for warehouse/product {key}"
+            )
+
+            assert (
+                current["reserved"]
+                >= units
+            ), (
+                "Shipment exceeds reserved stock "
+                f"for warehouse/product {key}"
+            )
+
+            current[
+                "on_hand"
+            ] -= units
+
+            current[
+                "reserved"
+            ] -= units
+
+        assert (
+            current["on_hand"] >= 0
+        ), (
+            "Negative physical stock detected "
+            f"for warehouse/product {key}"
+        )
+
+        assert (
+            current["reserved"] >= 0
+        ), (
+            "Negative reserved stock detected "
+            f"for warehouse/product {key}"
+        )
+
+    open_reservations = sum(
+        values[
+            "reserved"
+        ]
+        for values in state.values()
+    )
+
+    assert open_reservations == 0, (
+        f"{open_reservations} units remain reserved "
+        "after the simulated lifecycle completes"
+    )
+
+    return {
+        "movements":
+            len(inventory_movements),
+        "opening_receipts":
+            len(opening_receipts),
+        "replenishment_receipts":
+            (
+                (
+                    inventory_movements[
+                        "movement_type"
+                    ]
+                    == "receipt"
+                ).sum()
+                - len(opening_receipts)
+            ),
+        "reservations":
+            (
+                inventory_movements[
+                    "movement_type"
+                ]
+                == "reservation"
+            ).sum(),
+        "releases":
+            (
+                inventory_movements[
+                    "movement_type"
+                ]
+                == "release"
+            ).sum(),
+        "shipment_movements":
+            (
+                inventory_movements[
+                    "movement_type"
+                ]
+                == "shipment"
+            ).sum(),
+    }
+
+
+# ============================================================
+# Order Events
+# ============================================================
+
+def validate_order_events(
+    order_events: pd.DataFrame,
+    orders: pd.DataFrame,
+    shipments: pd.DataFrame,
+    warehouses: pd.DataFrame,
+    config: dict,
+) -> dict:
+
+    required = {
+        "event_id",
+        "event_key",
+        "order_id",
+        "warehouse_id",
+        "event_type",
+        "event_ts",
+        "source",
+        "payload",
+        "ingested_at",
+    }
+
+    assert required.issubset(
+        order_events.columns
+    ), (
+        "order_events.csv missing columns: "
+        f"{required - set(order_events.columns)}"
+    )
+
+    assert_no_missing(
+        order_events,
+        [
+            "event_id",
+            "event_key",
+            "order_id",
+            "warehouse_id",
+            "event_type",
+            "event_ts",
+            "source",
+            "payload",
+            "ingested_at",
+        ],
+        "order_events",
+    )
+
+    assert_unique(
+        order_events,
+        "event_id",
+        "order_events",
+    )
+
+    assert_unique(
+        order_events,
+        "event_key",
+        "order_events",
+    )
+
+    unknown_orders = (
+        ~order_events[
+            "order_id"
+        ].isin(
+            orders[
+                "order_id"
+            ]
+        )
+    ).sum()
+
+    assert unknown_orders == 0, (
+        f"{unknown_orders} order events reference "
+        "unknown orders"
+    )
+
+    unknown_warehouses = (
+        ~order_events[
+            "warehouse_id"
+        ].isin(
+            warehouses[
+                "warehouse_id"
+            ]
+        )
+    ).sum()
+
+    assert unknown_warehouses == 0, (
+        f"{unknown_warehouses} order events reference "
+        "unknown warehouses"
+    )
+
+    allowed_types = {
+        "order_created",
+        "payment_confirmed",
+        "inventory_reserved",
+        "processing_started",
+        "order_packed",
+        "shipment_created",
+        "order_shipped",
+        "order_delivered",
+        "delivery_exception",
+        "order_cancelled",
+        "inventory_released",
+    }
+
+    invalid_types = set(
+        order_events[
+            "event_type"
+        ].dropna()
+    ) - allowed_types
+
+    assert not invalid_types, (
+        "Unexpected order event types: "
+        f"{invalid_types}"
+    )
+
+    expected_source = str(
+        config.get(
+            "lifecycle",
+            {},
+        ).get(
+            "event_source",
+            "synthetic_generator",
+        )
+    )
+
+    invalid_sources = (
+        order_events[
+            "source"
+        ]
+        != expected_source
+    ).sum()
+
+    assert invalid_sources == 0, (
+        f"{invalid_sources} order events have "
+        "an unexpected source"
+    )
+
+    invalid_payloads = 0
+
+    for payload in order_events[
+        "payload"
+    ]:
+        try:
+            parsed = json.loads(
+                payload
+            )
+        except (
+            TypeError,
+            json.JSONDecodeError,
+        ):
+            invalid_payloads += 1
+            continue
+
+        if not isinstance(
+            parsed,
+            dict,
+        ):
+            invalid_payloads += 1
+
+    assert invalid_payloads == 0, (
+        f"{invalid_payloads} order events contain "
+        "invalid JSON-object payloads"
+    )
+
+    created_events = order_events[
+        order_events[
+            "event_type"
+        ] == "order_created"
+    ]
+
+    created_counts = (
+        created_events[
+            "order_id"
+        ]
+        .value_counts()
+    )
+
+    assert (
+        created_counts.eq(1).all()
+        and len(created_counts)
+        == len(orders)
+    ), (
+        "Every order must have exactly one "
+        "order_created event"
+    )
+
+    created_check = (
+        created_events[
+            [
+                "order_id",
+                "event_ts",
+            ]
+        ]
+        .merge(
+            orders[
+                [
+                    "order_id",
+                    "order_ts",
+                ]
+            ],
+            on="order_id",
+            how="left",
+        )
+    )
+
+    assert (
+        created_check[
+            "event_ts"
+        ]
+        == created_check[
+            "order_ts"
+        ]
+    ).all(), (
+        "order_created timestamps do not match order_ts"
+    )
+
+    # --------------------------------------------------------
+    # Per-order lifecycle path
+    # --------------------------------------------------------
+
+    events_by_order = {
+        int(order_id): group.sort_values(
+            by=[
+                "event_ts",
+                "event_id",
+            ]
+        )
+        for order_id, group
+        in order_events.groupby(
+            "order_id",
+            sort=False,
+        )
+    }
+
+    shipment_by_order = {
+        int(row.order_id): row
+        for row in shipments.itertuples(
+            index=False
+        )
+    }
+
+    cancelled = 0
+    delivered = 0
+    exceptions = 0
+    post_reservation_cancellations = 0
+
+    required_non_cancelled = {
+        "order_created",
+        "payment_confirmed",
+        "inventory_reserved",
+        "processing_started",
+        "order_packed",
+        "shipment_created",
+        "order_shipped",
+    }
+
+    for order in orders.itertuples(
+        index=False
+    ):
+        order_id = int(
+            order.order_id
+        )
+
+        group = events_by_order.get(
+            order_id
+        )
+
+        assert group is not None, (
+            f"Order {order_id} has no events"
+        )
+
+        assert (
+            group[
+                "event_ts"
+            ]
+            .is_monotonic_increasing
+        ), (
+            f"Order {order_id} event timestamps "
+            "are not chronological"
+        )
+
+        event_types = set(
+            group[
+                "event_type"
+            ]
+        )
+
+        status = str(
+            order.order_status
+        )
+
+        if status == "cancelled":
+            cancelled += 1
+
+            assert (
+                "order_cancelled"
+                in event_types
+            ), (
+                f"Cancelled order {order_id} lacks "
+                "order_cancelled event"
+            )
+
+            forbidden = {
+                "shipment_created",
+                "order_shipped",
+                "order_delivered",
+                "delivery_exception",
+            }
+
+            assert not (
+                event_types
+                & forbidden
+            ), (
+                f"Cancelled order {order_id} contains "
+                "shipment/delivery events"
+            )
+
+            cancel_row = group[
+                group[
+                    "event_type"
+                ] == "order_cancelled"
+            ]
+
+            assert len(cancel_row) == 1, (
+                f"Cancelled order {order_id} has "
+                "multiple cancellation events"
+            )
+
+            payload = json.loads(
+                cancel_row.iloc[0][
+                    "payload"
+                ]
+            )
+
+            stage = payload.get(
+                "stage"
+            )
+
+            assert stage in {
+                "pre_payment",
+                "post_payment",
+                "post_reservation",
+            }, (
+                f"Cancelled order {order_id} has "
+                f"invalid cancellation stage {stage!r}"
+            )
+
+            if stage == "pre_payment":
+                assert (
+                    "payment_confirmed"
+                    not in event_types
+                ), (
+                    f"Pre-payment cancellation {order_id} "
+                    "contains payment confirmation"
+                )
+
+                assert (
+                    "inventory_reserved"
+                    not in event_types
+                ), (
+                    f"Pre-payment cancellation {order_id} "
+                    "contains inventory reservation"
+                )
+
+            elif stage == "post_payment":
+                assert (
+                    "payment_confirmed"
+                    in event_types
+                ), (
+                    f"Post-payment cancellation {order_id} "
+                    "lacks payment confirmation"
+                )
+
+                assert (
+                    "inventory_reserved"
+                    not in event_types
+                ), (
+                    f"Post-payment cancellation {order_id} "
+                    "contains inventory reservation"
+                )
+
+            else:
+                post_reservation_cancellations += 1
+
+                assert {
+                    "payment_confirmed",
+                    "inventory_reserved",
+                    "inventory_released",
+                }.issubset(
+                    event_types
+                ), (
+                    f"Post-reservation cancellation "
+                    f"{order_id} lacks required events"
+                )
+
+            continue
+
+        assert required_non_cancelled.issubset(
+            event_types
+        ), (
+            f"Non-cancelled order {order_id} lacks "
+            "required lifecycle events"
+        )
+
+        assert (
+            "order_cancelled"
+            not in event_types
+        ), (
+            f"Non-cancelled order {order_id} contains "
+            "order_cancelled"
+        )
+
+        shipment = shipment_by_order.get(
+            order_id
+        )
+
+        assert shipment is not None, (
+            f"Non-cancelled order {order_id} lacks shipment"
+        )
+
+        if status == "delivered":
+            delivered += 1
+
+            assert (
+                "order_delivered"
+                in event_types
+            ), (
+                f"Delivered order {order_id} lacks "
+                "order_delivered event"
+            )
+
+            assert (
+                "delivery_exception"
+                not in event_types
+            ), (
+                f"Delivered order {order_id} contains "
+                "delivery_exception"
+            )
+
+        elif status == "shipped":
+            exceptions += 1
+
+            assert (
+                str(
+                    shipment.shipment_status
+                )
+                == "exception"
+            ), (
+                f"Shipped order {order_id} is not linked "
+                "to an exception shipment"
+            )
+
+            assert (
+                "delivery_exception"
+                in event_types
+            ), (
+                f"Exception order {order_id} lacks "
+                "delivery_exception event"
+            )
+
+            assert (
+                "order_delivered"
+                not in event_types
+            ), (
+                f"Exception order {order_id} contains "
+                "order_delivered"
+            )
+
+        else:
+            raise AssertionError(
+                "Unexpected final order status in "
+                f"lifecycle validation: {status!r}"
+            )
+
+    return {
+        "events": len(order_events),
+        "cancelled_orders": cancelled,
+        "delivered_orders": delivered,
+        "exception_orders": exceptions,
+        "post_reservation_cancellations":
+            post_reservation_cancellations,
+    }
+
+
 # ============================================================
 # Main Validation Pipeline
 # ============================================================
@@ -1141,6 +2264,22 @@ def main() -> None:
             "expected_delivery_at",
             "delivered_at",
             "created_at",
+        ],
+    )
+
+    inventory_movements = load_csv(
+        "inventory_movements",
+        parse_dates=[
+            "event_ts",
+            "created_at",
+        ],
+    )
+
+    order_events = load_csv(
+        "order_events",
+        parse_dates=[
+            "event_ts",
+            "ingested_at",
         ],
     )
 
@@ -1214,6 +2353,31 @@ def main() -> None:
         )
     )
     print("✓ shipments")
+
+    event_summary = (
+        validate_order_events(
+            order_events,
+            orders,
+            shipments,
+            warehouses,
+            config,
+        )
+    )
+    print("✓ order_events")
+
+    movement_summary = (
+        validate_inventory_movements(
+            inventory_movements,
+            inventory,
+            orders,
+            order_items,
+            warehouses,
+            products,
+            order_events,
+            config,
+        )
+    )
+    print("✓ inventory_movements")
 
     # --------------------------------------------------------
     # Summary
@@ -1292,6 +2456,26 @@ def main() -> None:
         f"{shipment_summary['late_rate']:.2f}%"
     )
 
+    print(
+        "  inventory movements  : "
+        f"{movement_summary['movements']:,}"
+    )
+
+    print(
+        "  replenishment receipts: "
+        f"{movement_summary['replenishment_receipts']:,}"
+    )
+
+    print(
+        "  order events         : "
+        f"{event_summary['events']:,}"
+    )
+
+    print(
+        "  post-reservation cancels: "
+        f"{event_summary['post_reservation_cancellations']:,}"
+    )
+
     print()
     print("Shipping distribution:")
 
@@ -1318,7 +2502,7 @@ def main() -> None:
 
     print()
     print(
-        "All eight-dataset validation "
+        "All ten-dataset validation "
         "checks passed."
     )
 

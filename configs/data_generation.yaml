@@ -88,3 +88,70 @@ fulfillment:
     same_day:
       min: 15.00
       max: 30.00
+
+# ---------------------------------------------------------
+# Order lifecycle and event simulation
+# ---------------------------------------------------------
+
+lifecycle:
+
+  cancellation_stages:
+    pre_payment: 0.30
+    post_payment: 0.30
+    post_reservation: 0.40
+
+  timing:
+
+    payment_confirmation_minutes:
+      min: 1
+      max: 20
+
+    inventory_reservation_minutes:
+      min: 1
+      max: 15
+
+    processing_start_minutes:
+      min: 5
+      max: 45
+
+    packing_hours:
+      standard:
+        min: 1
+        max: 8
+      express:
+        min: 0.5
+        max: 4
+      same_day:
+        min: 0.25
+        max: 2
+
+    shipment_creation_minutes:
+      min: 10
+      max: 60
+
+    cancellation_delay_minutes:
+      pre_payment:
+        min: 1
+        max: 15
+
+      post_payment:
+        min: 5
+        max: 45
+
+      post_reservation:
+        min: 10
+        max: 90
+
+    inventory_release_minutes:
+      min: 1
+      max: 15
+
+  event_source: synthetic_generator
+
+  exception_reasons:
+    carrier_delay: 0.35
+    weather: 0.15
+    address_issue: 0.15
+    damaged_package: 0.10
+    lost_package: 0.05
+    warehouse_delay: 0.20
