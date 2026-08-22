@@ -46,3 +46,8 @@ data/processed/synthetic/*
 models/*
 !models/.gitkeep
 
+
+# ML feature datasets
+!data/processed/features/
+data/processed/features/*
+!data/processed/features/.gitkeep
