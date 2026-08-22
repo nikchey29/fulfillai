@@ -3188,6 +3188,14 @@ def generate_inventory_movements_and_order_events(
         )
     )
 
+    # Preserve nullable order references as integers.
+    # Receipt/replenishment movements are not tied to an order,
+    # while reservation/release/shipment movements are.
+    inventory_movements["order_id"] = (
+        inventory_movements["order_id"]
+        .astype("Int64")
+    )
+
     # Renumber after chronological sort so movement_id itself reflects ledger
     # order and remains deterministic.
     inventory_movements[
