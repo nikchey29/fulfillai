@@ -74,8 +74,7 @@ class MLTaskConfig:
 
     threshold_metric: str | None = None
 
-    # Optional Phase 9 population eligibility flag.
-    # When set, rows are retained only when this column == 1.
+    # Optional binary row-eligibility flag applied after raw split validation.
     eligibility_column: str | None = None
 
 
@@ -165,6 +164,8 @@ DELIVERY_EXCEPTION = MLTaskConfig(
     positive_class=1,
 
     threshold_metric="f1",
+
+    eligibility_column=None,
 )
 
 

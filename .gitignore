@@ -55,3 +55,6 @@ artifacts/models/
 artifacts/metrics/
 artifacts/predictions/
 artifacts/experiments/
+
+# Generated ML artifacts
+artifacts/
