@@ -51,3 +51,7 @@ models/*
 !data/processed/features/
 data/processed/features/*
 !data/processed/features/.gitkeep
+artifacts/models/
+artifacts/metrics/
+artifacts/predictions/
+artifacts/experiments/

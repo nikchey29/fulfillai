@@ -191,29 +191,94 @@ DEMAND_FORECASTING_CONFIG: Final[DatasetConfig] = DatasetConfig(
         "product_id",
     ),
     required_columns=(
+        # Grain + target
         "demand_date",
         "warehouse_id",
         "product_id",
         "units_sold",
+
+        # Core historical demand features
+        "lag_1_units",
+        "lag_7_units",
+        "lag_14_units",
+        "lag_21_units",
+        "lag_28_units",
+        "lag_35_units",
+        "rolling_7d_units",
+        "rolling_7d_avg_units",
+        "rolling_28d_units",
+        "rolling_28d_avg_units",
+
+        # Phase 8.8 demand-frequency / intermittency features
+        "nonzero_days_last_7d",
+        "nonzero_days_last_28d",
+        "demand_frequency_7d",
+        "demand_frequency_28d",
+        "days_since_last_positive_demand",
+        "zero_demand_streak",
+
+        # Phase 8.8 volatility features
+        "rolling_7d_std_units",
+        "rolling_28d_std_units",
+        "coefficient_of_variation_28d",
+
+        # Phase 8.8 trend features
+        "prior_7d_avg_units",
+        "recent_mean_minus_long_mean",
+        "recent_7d_vs_28d_ratio",
+        "demand_acceleration_7d",
+        "recent_vs_prior_7d_ratio",
+
+        # Phase 8.8 expanding historical features
+        "historical_observation_days",
+        "historical_nonzero_days",
+        "historical_avg_units",
+        "historical_nonzero_avg_units",
+        "historical_sale_probability",
+
+        # Phase 8.8 same-weekday historical features
+        "same_weekday_historical_avg_units",
+        "same_weekday_sale_probability",
+
+        # Historical transactional context; all windows end at t-1
+        "rolling_28d_orders",
+        "rolling_28d_revenue",
     ),
     excluded_feature_columns=(
         # Target
         "units_sold",
 
-        # Same-day realized demand / transaction outcomes
+        # Same-day realized demand / transaction outcomes.
+        # These describe day t and therefore cannot be available when
+        # forecasting day t.
+        "gross_order_count",
         "gross_units_requested",
+        "gross_requested_value",
+        "order_count",
+        "cancelled_order_count",
         "cancelled_units",
         "revenue",
+        "avg_selling_price",
 
-        # Identifiers that should not be treated as numerical signals
+        # Current inventory snapshot fields.
+        # In vw_daily_product_demand these are present-day/static snapshot
+        # values rather than point-in-time historical balances, so using them
+        # for older demand dates would leak future inventory information.
+        "snapshot_on_hand_qty",
+        "snapshot_reserved_qty",
+        "snapshot_reorder_point",
+
+        # Technical grain identifiers. Human-readable warehouse/product
+        # attributes remain available as categorical predictors.
         "warehouse_id",
         "product_id",
     ),
     eligibility_filter=None,
     task_type="forecasting",
     description=(
-        "Forecast future warehouse/product demand using historical "
-        "demand and calendar features."
+        "Forecast warehouse/product daily demand using only calendar, "
+        "static catalog/location attributes, and historical signals whose "
+        "windows end before the prediction date."
     ),
 )
 

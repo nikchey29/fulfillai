@@ -459,10 +459,14 @@ daily_base AS (
 --
 -- IMPORTANT:
 --
--- Rolling features use only PREVIOUS days.
+-- Every feature intended for forecasting uses ONLY information
+-- available before the current demand_date.
 --
--- The current day's units_sold is NOT included, preventing
--- target leakage when this model is later used for ML.
+-- No window below includes CURRENT ROW.
+--
+-- Same-day transactional columns and current inventory snapshot
+-- columns remain in this analytical view because other analytics
+-- use them, but the ML forecasting contract must exclude them.
 -- ============================================================
 
 feature_layer AS (
@@ -673,6 +677,602 @@ feature_layer AS (
 
 
     FROM daily_base AS db
+),
+
+
+-- ============================================================
+-- Phase 8.8 historical feature windows
+--
+-- These windows extend the original model without changing the
+-- meaning, order, or type of the existing columns above.
+-- ============================================================
+
+historical_feature_windows AS (
+
+    SELECT
+
+        fl.*,
+
+
+        -- ----------------------------------------------------
+        -- Additional same-weekday / multi-week lags
+        -- ----------------------------------------------------
+
+        LAG(
+            fl.units_sold,
+            21
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+        ) AS lag_21_units,
+
+
+        LAG(
+            fl.units_sold,
+            35
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+        ) AS lag_35_units,
+
+
+        -- ----------------------------------------------------
+        -- Observation counts for partial early-history windows
+        -- ----------------------------------------------------
+
+        COUNT(*) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                7 PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS rolling_7d_observation_days,
+
+
+        COUNT(*) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                28 PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS rolling_28d_observation_days,
+
+
+        -- ----------------------------------------------------
+        -- Demand frequency / intermittency windows
+        -- ----------------------------------------------------
+
+        COUNT(*) FILTER (
+            WHERE fl.units_sold > 0
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                7 PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS nonzero_days_last_7d,
+
+
+        COUNT(*) FILTER (
+            WHERE fl.units_sold > 0
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                28 PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS nonzero_days_last_28d,
+
+
+        -- ----------------------------------------------------
+        -- Historical volatility
+        -- ----------------------------------------------------
+
+        ROUND(
+            STDDEV_POP(
+                fl.units_sold
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    7 PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            6
+        ) AS rolling_7d_std_units,
+
+
+        ROUND(
+            STDDEV_POP(
+                fl.units_sold
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    28 PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            6
+        ) AS rolling_28d_std_units,
+
+
+        -- ----------------------------------------------------
+        -- Previous 7-day block immediately before the recent
+        -- 7-day block. This creates a leakage-safe trend signal.
+        -- ----------------------------------------------------
+
+        ROUND(
+            AVG(
+                fl.units_sold
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    14 PRECEDING
+                    AND
+                    8 PRECEDING
+            )::numeric,
+            6
+        ) AS prior_7d_avg_units,
+
+
+        -- ----------------------------------------------------
+        -- Longer historical activity
+        -- ----------------------------------------------------
+
+        SUM(
+            fl.order_count
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                28 PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS rolling_28d_orders,
+
+
+        ROUND(
+            SUM(
+                fl.revenue
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    28 PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            2
+        ) AS rolling_28d_revenue,
+
+
+        -- ----------------------------------------------------
+        -- Expanding warehouse-product history
+        -- ----------------------------------------------------
+
+        COUNT(*) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS historical_observation_days,
+
+
+        COUNT(*) FILTER (
+            WHERE fl.units_sold > 0
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS historical_nonzero_days,
+
+
+        ROUND(
+            AVG(
+                fl.units_sold
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    UNBOUNDED PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            6
+        ) AS historical_avg_units,
+
+
+        ROUND(
+            AVG(
+                fl.units_sold
+            ) FILTER (
+                WHERE fl.units_sold > 0
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    UNBOUNDED PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            6
+        ) AS historical_nonzero_avg_units,
+
+
+        MAX(
+            fl.demand_date
+        ) FILTER (
+            WHERE fl.units_sold > 0
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS last_positive_demand_date,
+
+
+        -- ----------------------------------------------------
+        -- Weekday-specific historical behavior
+        --
+        -- Because day_of_week is part of the partition, each
+        -- previous row is the same weekday in an earlier week.
+        -- ----------------------------------------------------
+
+        COUNT(*) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id,
+                fl.day_of_week
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS same_weekday_historical_observation_days,
+
+
+        COUNT(*) FILTER (
+            WHERE fl.units_sold > 0
+        ) OVER (
+
+            PARTITION BY
+                fl.warehouse_id,
+                fl.product_id,
+                fl.day_of_week
+
+            ORDER BY
+                fl.demand_date
+
+            ROWS BETWEEN
+                UNBOUNDED PRECEDING
+                AND
+                1 PRECEDING
+
+        ) AS same_weekday_historical_nonzero_days,
+
+
+        ROUND(
+            AVG(
+                fl.units_sold
+            ) OVER (
+
+                PARTITION BY
+                    fl.warehouse_id,
+                    fl.product_id,
+                    fl.day_of_week
+
+                ORDER BY
+                    fl.demand_date
+
+                ROWS BETWEEN
+                    UNBOUNDED PRECEDING
+                    AND
+                    1 PRECEDING
+            )::numeric,
+            6
+        ) AS same_weekday_historical_avg_units
+
+
+    FROM feature_layer AS fl
+),
+
+
+-- ============================================================
+-- Phase 8.8 derived forecasting features
+--
+-- All derived values below depend exclusively on historical
+-- windows that already end at 1 PRECEDING.
+-- ============================================================
+
+extended_feature_layer AS (
+
+    SELECT
+
+        hfw.*,
+
+
+        -- ----------------------------------------------------
+        -- Historical demand-frequency features
+        -- ----------------------------------------------------
+
+        ROUND(
+            (
+                hfw.nonzero_days_last_7d::numeric
+                /
+                NULLIF(
+                    hfw.rolling_7d_observation_days,
+                    0
+                )
+            ),
+            6
+        ) AS demand_frequency_7d,
+
+
+        ROUND(
+            (
+                hfw.nonzero_days_last_28d::numeric
+                /
+                NULLIF(
+                    hfw.rolling_28d_observation_days,
+                    0
+                )
+            ),
+            6
+        ) AS demand_frequency_28d,
+
+
+        ROUND(
+            (
+                hfw.historical_nonzero_days::numeric
+                /
+                NULLIF(
+                    hfw.historical_observation_days,
+                    0
+                )
+            ),
+            6
+        ) AS historical_sale_probability,
+
+
+        ROUND(
+            (
+                hfw.same_weekday_historical_nonzero_days::numeric
+                /
+                NULLIF(
+                    hfw.same_weekday_historical_observation_days,
+                    0
+                )
+            ),
+            6
+        ) AS same_weekday_sale_probability,
+
+
+        -- ----------------------------------------------------
+        -- Intermittency / recency
+        -- ----------------------------------------------------
+
+        CASE
+
+            WHEN hfw.last_positive_demand_date IS NULL
+                THEN NULL
+
+            ELSE
+                hfw.demand_date
+                - hfw.last_positive_demand_date
+
+        END AS days_since_last_positive_demand,
+
+
+        CASE
+
+            WHEN hfw.historical_observation_days = 0
+                THEN 0::bigint
+
+            WHEN hfw.last_positive_demand_date IS NULL
+                THEN hfw.historical_observation_days
+
+            ELSE
+                GREATEST(
+                    (
+                        hfw.demand_date
+                        - hfw.last_positive_demand_date
+                        - 1
+                    )::bigint,
+                    0::bigint
+                )
+
+        END AS zero_demand_streak,
+
+
+        -- ----------------------------------------------------
+        -- Volatility
+        -- ----------------------------------------------------
+
+        ROUND(
+            (
+                hfw.rolling_28d_std_units
+                /
+                NULLIF(
+                    hfw.rolling_28d_avg_units,
+                    0
+                )
+            )::numeric,
+            6
+        ) AS coefficient_of_variation_28d,
+
+
+        -- ----------------------------------------------------
+        -- Trend / acceleration
+        -- ----------------------------------------------------
+
+        ROUND(
+            (
+                hfw.rolling_7d_avg_units
+                - hfw.rolling_28d_avg_units
+            )::numeric,
+            6
+        ) AS recent_mean_minus_long_mean,
+
+
+        ROUND(
+            (
+                hfw.rolling_7d_avg_units
+                /
+                NULLIF(
+                    hfw.rolling_28d_avg_units,
+                    0
+                )
+            )::numeric,
+            6
+        ) AS recent_7d_vs_28d_ratio,
+
+
+        ROUND(
+            (
+                hfw.rolling_7d_avg_units
+                - hfw.prior_7d_avg_units
+            )::numeric,
+            6
+        ) AS demand_acceleration_7d,
+
+
+        ROUND(
+            (
+                hfw.rolling_7d_avg_units
+                /
+                NULLIF(
+                    hfw.prior_7d_avg_units,
+                    0
+                )
+            )::numeric,
+            6
+        ) AS recent_vs_prior_7d_ratio
+
+
+    FROM historical_feature_windows AS hfw
 )
 
 
@@ -680,7 +1280,7 @@ SELECT
 
     *
 
-FROM feature_layer
+FROM extended_feature_layer
 ;
 
 
@@ -1094,4 +1694,192 @@ ORDER BY
     demand_date
 
 LIMIT 20
+;
+
+
+-- ============================================================
+-- VALIDATION 10
+-- Leakage-safe historical feature integrity
+--
+-- Every count below should be zero.
+-- ============================================================
+
+
+SELECT
+
+    COUNT(*) FILTER (
+        WHERE
+            demand_frequency_7d < 0
+            OR demand_frequency_7d > 1
+    ) AS invalid_demand_frequency_7d,
+
+    COUNT(*) FILTER (
+        WHERE
+            demand_frequency_28d < 0
+            OR demand_frequency_28d > 1
+    ) AS invalid_demand_frequency_28d,
+
+    COUNT(*) FILTER (
+        WHERE
+            historical_sale_probability < 0
+            OR historical_sale_probability > 1
+    ) AS invalid_historical_sale_probability,
+
+    COUNT(*) FILTER (
+        WHERE
+            same_weekday_sale_probability < 0
+            OR same_weekday_sale_probability > 1
+    ) AS invalid_same_weekday_sale_probability,
+
+    COUNT(*) FILTER (
+        WHERE
+            nonzero_days_last_7d
+            > rolling_7d_observation_days
+    ) AS invalid_nonzero_7d_counts,
+
+    COUNT(*) FILTER (
+        WHERE
+            nonzero_days_last_28d
+            > rolling_28d_observation_days
+    ) AS invalid_nonzero_28d_counts,
+
+    COUNT(*) FILTER (
+        WHERE
+            days_since_last_positive_demand < 1
+    ) AS invalid_days_since_positive,
+
+    COUNT(*) FILTER (
+        WHERE
+            zero_demand_streak < 0
+    ) AS invalid_zero_demand_streak
+
+FROM vw_daily_product_demand
+;
+
+
+-- ============================================================
+-- VALIDATION 11
+-- Explicit lag-boundary reconciliation
+--
+-- Because the model has a dense daily spine, LAG(..., 1) must
+-- equal the prior calendar day's units_sold, and LAG(..., 7)
+-- must equal the value exactly seven calendar days earlier.
+--
+-- Both mismatch counts should be zero.
+-- ============================================================
+
+
+SELECT
+
+    COUNT(*) FILTER (
+        WHERE
+            current_day.lag_1_units
+            IS DISTINCT FROM prior_1.units_sold
+    ) AS lag_1_mismatches,
+
+    COUNT(*) FILTER (
+        WHERE
+            current_day.lag_7_units
+            IS DISTINCT FROM prior_7.units_sold
+    ) AS lag_7_mismatches
+
+FROM vw_daily_product_demand AS current_day
+
+LEFT JOIN vw_daily_product_demand AS prior_1
+    ON prior_1.warehouse_id = current_day.warehouse_id
+    AND prior_1.product_id = current_day.product_id
+    AND prior_1.demand_date = current_day.demand_date - 1
+
+LEFT JOIN vw_daily_product_demand AS prior_7
+    ON prior_7.warehouse_id = current_day.warehouse_id
+    AND prior_7.product_id = current_day.product_id
+    AND prior_7.demand_date = current_day.demand_date - 7
+;
+
+
+-- ============================================================
+-- VALIDATION 12
+-- Phase 8.8 leakage-safe feature preview
+--
+-- Restrict to rows with at least 35 days of historical context
+-- so all weekly lag examples are directly interpretable.
+-- ============================================================
+
+
+SELECT
+
+    demand_date,
+
+    warehouse_code,
+
+    sku,
+
+    units_sold,
+
+    lag_1_units,
+
+    lag_7_units,
+
+    lag_14_units,
+
+    lag_21_units,
+
+    lag_28_units,
+
+    lag_35_units,
+
+    rolling_7d_avg_units,
+
+    rolling_28d_avg_units,
+
+    nonzero_days_last_7d,
+
+    nonzero_days_last_28d,
+
+    demand_frequency_7d,
+
+    demand_frequency_28d,
+
+    rolling_28d_std_units,
+
+    coefficient_of_variation_28d,
+
+    historical_avg_units,
+
+    historical_nonzero_avg_units,
+
+    historical_sale_probability,
+
+    same_weekday_historical_avg_units,
+
+    same_weekday_sale_probability,
+
+    days_since_last_positive_demand,
+
+    zero_demand_streak,
+
+    demand_acceleration_7d,
+
+    recent_7d_vs_28d_ratio,
+
+    recent_vs_prior_7d_ratio
+
+FROM vw_daily_product_demand
+
+WHERE
+
+    demand_date >= (
+        SELECT
+            MIN(order_ts::date)
+            + 35
+        FROM orders
+    )
+
+ORDER BY
+
+    warehouse_id,
+    product_id,
+    demand_date
+
+LIMIT 30
 ;
