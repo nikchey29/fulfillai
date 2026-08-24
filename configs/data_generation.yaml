@@ -28,10 +28,6 @@ orders:
   average_items_per_order: 2.2
   cancellation_rate: 0.035
 
-fulfillment:
-  delivery_exception_rate: 0.045
-  late_delivery_rate: 0.10
-
 demand:
   weekend_multiplier: 1.18
   holiday_multiplier: 1.55
