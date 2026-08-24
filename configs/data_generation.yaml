@@ -28,10 +28,6 @@ orders:
   average_items_per_order: 2.2
   cancellation_rate: 0.035
 
-fulfillment:
-  delivery_exception_rate: 0.045
-  late_delivery_rate: 0.10
-
 demand:
   weekend_multiplier: 1.18
   holiday_multiplier: 1.55
@@ -70,6 +66,58 @@ fulfillment:
 
   delivery_exception_rate: 0.045
   late_delivery_rate: 0.10
+
+  # Delivery V2: structured synthetic risk.
+  #
+  # V1 sampled exception/late outcomes independently of every predictor,
+  # which made leakage-safe modeling mathematically unable to outperform
+  # the class prevalence. V2 preserves the same configured event rates but
+  # makes risk depend on shipment-time information such as carrier, service
+  # level, processing pressure, calendar effects and warehouse.
+  delivery_risk_v2:
+    enabled: true
+    seed_offset: 9107
+    exception_signal_scale: 1.70
+    late_signal_scale: 1.35
+
+    carrier_exception_effects:
+      DHL: -0.55
+      UPS: -0.25
+      FedEx: 0.00
+      DPD: 0.55
+      GLS: 0.85
+
+    carrier_late_effects:
+      DHL: -0.35
+      UPS: -0.15
+      FedEx: 0.05
+      DPD: 0.35
+      GLS: 0.55
+
+    shipping_method_exception_effects:
+      standard: -0.15
+      express: 0.15
+      same_day: 0.70
+
+    shipping_method_late_effects:
+      standard: -0.25
+      express: 0.15
+      same_day: 0.90
+
+    warehouse_effects:
+      1: 0.25
+      2: -0.15
+      3: 0.10
+      4: -0.10
+      5: 0.20
+
+    month_effects:
+      1: 0.35
+      2: 0.10
+      6: 0.05
+      7: 0.10
+      11: 0.20
+      12: 0.55
 
   carriers:
     DHL: 0.24

@@ -487,6 +487,109 @@ label_layer AS (
 
 
     FROM feature_base AS fb
+),
+
+
+final_layer AS (
+
+    SELECT
+
+        ll.*,
+
+
+        -- ====================================================
+        -- Delivery V2 shipment-time risk features
+        --
+        -- Appended after the original V1 view columns so PostgreSQL
+        -- CREATE OR REPLACE VIEW preserves the existing column contract.
+        -- All fields are known by dispatch time.
+        -- ====================================================
+
+        EXTRACT(
+            HOUR FROM ll.expected_delivery_at
+        )::integer AS promise_hour,
+
+        EXTRACT(
+            ISODOW FROM ll.expected_delivery_at
+        )::integer AS promise_day_of_week,
+
+        EXTRACT(
+            MONTH FROM ll.expected_delivery_at
+        )::integer AS promise_month,
+
+        CASE
+            WHEN EXTRACT(
+                ISODOW FROM ll.expected_delivery_at
+            ) IN (6, 7)
+            THEN 1
+            ELSE 0
+        END AS promise_is_weekend,
+
+        CASE
+            WHEN ll.promised_delivery_ts > ll.order_ts
+            THEN ROUND(
+                (
+                    EXTRACT(
+                        EPOCH FROM (
+                            ll.shipped_at - ll.order_ts
+                        )
+                    )
+                    / NULLIF(
+                        EXTRACT(
+                            EPOCH FROM (
+                                ll.promised_delivery_ts - ll.order_ts
+                            )
+                        ),
+                        0
+                    )
+                )::numeric,
+                4
+            )
+            ELSE NULL
+        END AS processing_share_of_promise,
+
+        CASE
+            WHEN ll.promised_delivery_ts > ll.order_ts
+            THEN ROUND(
+                (
+                    EXTRACT(
+                        EPOCH FROM (
+                            ll.expected_delivery_at - ll.shipped_at
+                        )
+                    )
+                    / NULLIF(
+                        EXTRACT(
+                            EPOCH FROM (
+                                ll.promised_delivery_ts - ll.order_ts
+                            )
+                        ),
+                        0
+                    )
+                )::numeric,
+                4
+            )
+            ELSE NULL
+        END AS remaining_window_share_of_promise,
+
+        CONCAT(
+            ll.carrier,
+            '__',
+            ll.shipping_method
+        ) AS carrier_shipping_method,
+
+        CONCAT(
+            ll.warehouse_code,
+            '__',
+            ll.shipping_method
+        ) AS warehouse_shipping_method,
+
+        CONCAT(
+            ll.destination_country,
+            '__',
+            ll.shipping_method
+        ) AS destination_shipping_method
+
+    FROM label_layer AS ll
 )
 
 
@@ -494,7 +597,7 @@ SELECT
 
     *
 
-FROM label_layer
+FROM final_layer
 ;
 
 

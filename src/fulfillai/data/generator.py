@@ -1462,6 +1462,57 @@ def generate_order_items(
 # Shipments
 # ---------------------------------------------------------------------------
 
+def _sigmoid_array(values: np.ndarray) -> np.ndarray:
+    """Numerically stable logistic transform for synthetic risk scores."""
+
+    clipped = np.clip(
+        np.asarray(values, dtype=float),
+        -40.0,
+        40.0,
+    )
+
+    return 1.0 / (1.0 + np.exp(-clipped))
+
+
+def _calibrated_probabilities(
+    scores: np.ndarray,
+    target_rate: float,
+) -> np.ndarray:
+    """
+    Convert relative risk scores into probabilities while preserving the
+    configured population event rate in expectation.
+
+    The score ranking supplies learnable signal. A binary-searched intercept
+    keeps the synthetic dataset aligned with the configured base prevalence.
+    """
+
+    values = np.asarray(scores, dtype=float)
+
+    if values.ndim != 1 or len(values) == 0:
+        raise ValueError("Risk scores must be a non-empty one-dimensional array.")
+
+    if not 0.0 < target_rate < 1.0:
+        raise ValueError("Target event rate must be strictly between 0 and 1.")
+
+    low = -30.0
+    high = 30.0
+
+    for _ in range(80):
+        midpoint = (low + high) / 2.0
+        mean_probability = float(
+            _sigmoid_array(values + midpoint).mean()
+        )
+
+        if mean_probability < target_rate:
+            low = midpoint
+        else:
+            high = midpoint
+
+    intercept = (low + high) / 2.0
+
+    return _sigmoid_array(values + intercept)
+
+
 def generate_shipments(
     orders: pd.DataFrame,
     config: dict[str, Any],
@@ -1470,238 +1521,189 @@ def generate_shipments(
     """
     Generate one shipment for every non-cancelled order.
 
-    Shipping behavior includes:
-    - configurable processing times
-    - configurable transit times
-    - carrier distribution
-    - shipping costs
-    - delivery exceptions
-    - late deliveries
+    Version 2 keeps the configured overall exception/late prevalence but makes
+    event probability depend on information that is legitimately available by
+    shipment time. This fixes the original synthetic-data issue where delivery
+    outcomes were independent Bernoulli draws and therefore not learnable by
+    any leakage-safe model.
 
-    Cancelled orders do not generate shipments.
+    The main generator RNG still consumes the same legacy outcome draws as the
+    original implementation (shadow draws) so downstream simulation randomness
+    remains stable. A dedicated risk RNG determines the V2 delivery outcomes.
     """
 
     fulfillment = config["fulfillment"]
 
-    processing_hours = fulfillment[
-        "processing_hours"
-    ]
-
-    transit_hours = fulfillment[
-        "transit_hours"
-    ]
-
-    shipping_costs = fulfillment[
-        "shipping_cost"
-    ]
+    processing_hours = fulfillment["processing_hours"]
+    transit_hours = fulfillment["transit_hours"]
+    shipping_costs = fulfillment["shipping_cost"]
 
     exception_rate = float(
-        fulfillment[
-            "delivery_exception_rate"
-        ]
+        fulfillment["delivery_exception_rate"]
     )
-
     late_rate = float(
-        fulfillment[
-            "late_delivery_rate"
-        ]
+        fulfillment["late_delivery_rate"]
     )
-
-    carriers = fulfillment[
-        "carriers"
-    ]
 
     if not 0.0 <= exception_rate <= 1.0:
         raise ValueError(
-            "delivery_exception_rate must be "
-            "between 0 and 1."
+            "delivery_exception_rate must be between 0 and 1."
         )
-
     if not 0.0 <= late_rate <= 1.0:
         raise ValueError(
-            "late_delivery_rate must be "
-            "between 0 and 1."
+            "late_delivery_rate must be between 0 and 1."
         )
 
-    carrier_names = list(
-        carriers.keys()
-    )
-
+    carriers = fulfillment["carriers"]
+    carrier_names = list(carriers.keys())
     carrier_probabilities = np.array(
-        [
-            float(
-                carriers[name]
-            )
-            for name
-            in carrier_names
-        ],
+        [float(carriers[name]) for name in carrier_names],
         dtype=float,
     )
-
-    probability_total = (
-        carrier_probabilities.sum()
-    )
-
+    probability_total = carrier_probabilities.sum()
     if probability_total <= 0:
         raise ValueError(
-            "Carrier probabilities must "
-            "sum to a positive value."
+            "Carrier probabilities must sum to a positive value."
         )
+    carrier_probabilities = carrier_probabilities / probability_total
 
-    carrier_probabilities = (
-        carrier_probabilities
-        / probability_total
+    risk_config = fulfillment.get("delivery_risk_v2", {})
+    structured_risk = bool(risk_config.get("enabled", True))
+
+    exception_signal_scale = float(
+        risk_config.get("exception_signal_scale", 1.70)
+    )
+    late_signal_scale = float(
+        risk_config.get("late_signal_scale", 1.35)
     )
 
-    updated_orders = (
-        orders.copy()
+    carrier_exception_effects = {
+        "DHL": -0.55,
+        "UPS": -0.25,
+        "FedEx": 0.00,
+        "DPD": 0.55,
+        "GLS": 0.85,
+        **risk_config.get("carrier_exception_effects", {}),
+    }
+    carrier_late_effects = {
+        "DHL": -0.35,
+        "UPS": -0.15,
+        "FedEx": 0.05,
+        "DPD": 0.35,
+        "GLS": 0.55,
+        **risk_config.get("carrier_late_effects", {}),
+    }
+    method_exception_effects = {
+        "standard": -0.15,
+        "express": 0.15,
+        "same_day": 0.70,
+        **risk_config.get("shipping_method_exception_effects", {}),
+    }
+    method_late_effects = {
+        "standard": -0.25,
+        "express": 0.15,
+        "same_day": 0.90,
+        **risk_config.get("shipping_method_late_effects", {}),
+    }
+    warehouse_effects = {
+        1: 0.25,
+        2: -0.15,
+        3: 0.10,
+        4: -0.10,
+        5: 0.20,
+    }
+    warehouse_effects.update(
+        {
+            int(key): float(value)
+            for key, value in risk_config.get(
+                "warehouse_effects",
+                {},
+            ).items()
+        }
+    )
+    month_effects = {
+        1: 0.35,
+        2: 0.10,
+        6: 0.05,
+        7: 0.10,
+        11: 0.20,
+        12: 0.55,
+    }
+    month_effects.update(
+        {
+            int(key): float(value)
+            for key, value in risk_config.get(
+                "month_effects",
+                {},
+            ).items()
+        }
     )
 
-    shipment_rows = []
+    risk_seed = int(config.get("seed", 42)) + int(
+        risk_config.get("seed_offset", 9107)
+    )
+    risk_rng = np.random.default_rng(risk_seed)
 
-    exception_order_ids = []
-
+    updated_orders = orders.copy()
+    provisional_rows: list[dict[str, Any]] = []
     shipment_id = 1
 
-    for order in orders.itertuples(
-        index=False
-    ):
-
-        if (
-            str(order.order_status)
-            == "cancelled"
-        ):
+    for order in orders.itertuples(index=False):
+        if str(order.order_status) == "cancelled":
             continue
 
-        order_id = int(
-            order.order_id
-        )
+        order_id = int(order.order_id)
+        warehouse_id = int(order.warehouse_id)
+        shipping_method = str(order.shipping_method)
 
-        warehouse_id = int(
-            order.warehouse_id
-        )
-
-        shipping_method = str(
-            order.shipping_method
-        )
-
-        if (
-            shipping_method
-            not in processing_hours
-        ):
+        if shipping_method not in processing_hours:
             raise ValueError(
-                "Missing processing-hours "
-                "configuration for "
+                "Missing processing-hours configuration for "
+                f"{shipping_method}."
+            )
+        if shipping_method not in transit_hours:
+            raise ValueError(
+                "Missing transit-hours configuration for "
+                f"{shipping_method}."
+            )
+        if shipping_method not in shipping_costs:
+            raise ValueError(
+                "Missing shipping-cost configuration for "
                 f"{shipping_method}."
             )
 
-        if (
-            shipping_method
-            not in transit_hours
-        ):
-            raise ValueError(
-                "Missing transit-hours "
-                "configuration for "
-                f"{shipping_method}."
-            )
+        order_ts = pd.Timestamp(order.order_ts).to_pydatetime()
+        expected_delivery_at = pd.Timestamp(
+            order.promised_delivery_ts
+        ).to_pydatetime()
 
-        if (
-            shipping_method
-            not in shipping_costs
-        ):
-            raise ValueError(
-                "Missing shipping-cost "
-                "configuration for "
-                f"{shipping_method}."
-            )
-
-        order_ts = (
-            pd.Timestamp(
-                order.order_ts
-            )
-            .to_pydatetime()
-        )
-
-        expected_delivery_at = (
-            pd.Timestamp(
-                order.promised_delivery_ts
-            )
-            .to_pydatetime()
-        )
-
-        process_min = float(
-            processing_hours[
-                shipping_method
-            ]["min"]
-        )
-
-        process_max = float(
-            processing_hours[
-                shipping_method
-            ]["max"]
-        )
-
+        process_min = float(processing_hours[shipping_method]["min"])
+        process_max = float(processing_hours[shipping_method]["max"])
         if process_max < process_min:
             raise ValueError(
-                "Invalid processing-hours "
-                f"range for {shipping_method}."
+                f"Invalid processing-hours range for {shipping_method}."
             )
 
         processing_duration = float(
-            rng.uniform(
-                process_min,
-                process_max,
-            )
+            rng.uniform(process_min, process_max)
+        )
+        shipped_at = order_ts + timedelta(hours=processing_duration)
+        created_at = order_ts + timedelta(
+            hours=(processing_duration * 0.70)
         )
 
-        shipped_at = (
-            order_ts
-            + timedelta(
-                hours=processing_duration
-            )
-        )
-
-        # Shipment record is created before dispatch.
-        created_at = (
-            order_ts
-            + timedelta(
-                hours=(
-                    processing_duration
-                    * 0.70
-                )
-            )
-        )
-
-        transit_min = float(
-            transit_hours[
-                shipping_method
-            ]["min"]
-        )
-
-        transit_max = float(
-            transit_hours[
-                shipping_method
-            ]["max"]
-        )
-
+        transit_min = float(transit_hours[shipping_method]["min"])
+        transit_max = float(transit_hours[shipping_method]["max"])
         if transit_max < transit_min:
             raise ValueError(
-                "Invalid transit-hours "
-                f"range for {shipping_method}."
+                f"Invalid transit-hours range for {shipping_method}."
             )
 
         transit_duration = float(
-            rng.uniform(
-                transit_min,
-                transit_max,
-            )
+            rng.uniform(transit_min, transit_max)
         )
-
-        natural_delivery_at = (
-            shipped_at
-            + timedelta(
-                hours=transit_duration
-            )
+        natural_delivery_at = shipped_at + timedelta(
+            hours=transit_duration
         )
 
         carrier = str(
@@ -1711,154 +1713,160 @@ def generate_shipments(
             )
         )
 
-        cost_min = float(
-            shipping_costs[
-                shipping_method
-            ]["min"]
-        )
-
-        cost_max = float(
-            shipping_costs[
-                shipping_method
-            ]["max"]
-        )
-
+        cost_min = float(shipping_costs[shipping_method]["min"])
+        cost_max = float(shipping_costs[shipping_method]["max"])
         if cost_max < cost_min:
             raise ValueError(
-                "Invalid shipping-cost "
-                f"range for {shipping_method}."
+                f"Invalid shipping-cost range for {shipping_method}."
             )
 
         shipping_cost = round(
-            float(
-                rng.uniform(
-                    cost_min,
-                    cost_max,
-                )
-            ),
+            float(rng.uniform(cost_min, cost_max)),
             2,
         )
 
-        has_exception = bool(
-            rng.random()
-            < exception_rate
+        # Preserve the legacy main-RNG consumption pattern so later phases of
+        # the synthetic simulation do not drift merely because the delivery
+        # target mechanism changed.
+        shadow_exception = bool(rng.random() < exception_rate)
+        if not shadow_exception:
+            shadow_late = bool(rng.random() < late_rate)
+            if shadow_late:
+                _ = float(rng.uniform(2.0, 36.0))
+
+        process_ratio = processing_duration / max(process_max, 1e-9)
+        expected_transit_hours = max(
+            0.0,
+            (expected_delivery_at - shipped_at).total_seconds() / 3600.0,
+        )
+        transit_window_ratio = expected_transit_hours / max(
+            transit_max,
+            1e-9,
+        )
+        ship_is_weekend = 1.0 if shipped_at.isoweekday() in (6, 7) else 0.0
+        month_effect = float(month_effects.get(int(order_ts.month), 0.0))
+        warehouse_effect = float(warehouse_effects.get(warehouse_id, 0.0))
+        order_value = max(float(order.total_amount), 0.0)
+        value_pressure = min(np.log1p(order_value) / 7.0, 1.5)
+
+        if structured_risk:
+            exception_score = exception_signal_scale * (
+                float(carrier_exception_effects.get(carrier, 0.0))
+                + float(method_exception_effects.get(shipping_method, 0.0))
+                + (0.55 * ship_is_weekend)
+                + (0.55 * process_ratio)
+                + (0.15 * value_pressure)
+                + warehouse_effect
+                + month_effect
+            )
+
+            late_score = late_signal_scale * (
+                float(carrier_late_effects.get(carrier, 0.0))
+                + float(method_late_effects.get(shipping_method, 0.0))
+                + (0.45 * ship_is_weekend)
+                + (1.60 * process_ratio)
+                - (1.10 * transit_window_ratio)
+                + (0.10 * value_pressure)
+                + warehouse_effect
+                + (1.10 * month_effect)
+            )
+        else:
+            exception_score = 0.0
+            late_score = 0.0
+
+        provisional_rows.append(
+            {
+                "shipment_id": shipment_id,
+                "shipment_external_id": f"SHP-{shipment_id:08d}",
+                "order_id": order_id,
+                "warehouse_id": warehouse_id,
+                "carrier": carrier,
+                "shipped_at": shipped_at,
+                "expected_delivery_at": expected_delivery_at,
+                "shipping_cost": shipping_cost,
+                "created_at": created_at,
+                "_natural_delivery_at": natural_delivery_at,
+                "_exception_score": exception_score,
+                "_late_score": late_score,
+            }
+        )
+        shipment_id += 1
+
+    provisional = pd.DataFrame(provisional_rows)
+    if provisional.empty:
+        return updated_orders, provisional
+
+    exception_probabilities = _calibrated_probabilities(
+        provisional["_exception_score"].to_numpy(dtype=float),
+        max(min(exception_rate, 1.0 - 1e-9), 1e-9),
+    )
+    is_exception = risk_rng.random(len(provisional)) < exception_probabilities
+
+    is_late = np.zeros(len(provisional), dtype=bool)
+    delivered_mask = ~is_exception
+
+    if delivered_mask.any():
+        late_probabilities = _calibrated_probabilities(
+            provisional.loc[
+                delivered_mask,
+                "_late_score",
+            ].to_numpy(dtype=float),
+            max(min(late_rate, 1.0 - 1e-9), 1e-9),
+        )
+        is_late[delivered_mask] = (
+            risk_rng.random(int(delivered_mask.sum()))
+            < late_probabilities
         )
 
-        if has_exception:
+    shipment_rows: list[dict[str, Any]] = []
+    exception_order_ids: list[int] = []
 
-            shipment_status = (
-                "exception"
-            )
-
+    for index, row in provisional.iterrows():
+        if bool(is_exception[index]):
+            shipment_status = "exception"
             delivered_at = None
-
-            exception_order_ids.append(
-                order_id
-            )
-
+            exception_order_ids.append(int(row["order_id"]))
         else:
-
-            is_late = bool(
-                rng.random()
-                < late_rate
-            )
-
-            if is_late:
-
-                late_delay = float(
-                    rng.uniform(
-                        2.0,
-                        36.0,
-                    )
-                )
-
+            if bool(is_late[index]):
+                late_delay = float(risk_rng.uniform(2.0, 36.0))
                 delivered_at = max(
-                    natural_delivery_at,
-                    (
-                        expected_delivery_at
-                        + timedelta(
-                            hours=late_delay
-                        )
-                    ),
+                    row["_natural_delivery_at"],
+                    row["expected_delivery_at"]
+                    + timedelta(hours=late_delay),
                 )
-
             else:
-
                 delivered_at = min(
-                    natural_delivery_at,
-                    expected_delivery_at,
+                    row["_natural_delivery_at"],
+                    row["expected_delivery_at"],
                 )
-
-                delivered_at = max(
-                    delivered_at,
-                    shipped_at,
-                )
-
-            shipment_status = (
-                "delivered"
-            )
+                delivered_at = max(delivered_at, row["shipped_at"])
+            shipment_status = "delivered"
 
         shipment_rows.append(
             {
-                "shipment_id": (
-                    shipment_id
-                ),
-                "shipment_external_id": (
-                    f"SHP-{shipment_id:08d}"
-                ),
-                "order_id": (
-                    order_id
-                ),
-                "warehouse_id": (
-                    warehouse_id
-                ),
-                "carrier": (
-                    carrier
-                ),
-                "shipment_status": (
-                    shipment_status
-                ),
-                "shipped_at": (
-                    shipped_at
-                ),
-                "expected_delivery_at": (
-                    expected_delivery_at
-                ),
-                "delivered_at": (
-                    delivered_at
-                ),
-                "shipping_cost": (
-                    shipping_cost
-                ),
-                "created_at": (
-                    created_at
-                ),
+                "shipment_id": int(row["shipment_id"]),
+                "shipment_external_id": str(row["shipment_external_id"]),
+                "order_id": int(row["order_id"]),
+                "warehouse_id": int(row["warehouse_id"]),
+                "carrier": str(row["carrier"]),
+                "shipment_status": shipment_status,
+                "shipped_at": row["shipped_at"],
+                "expected_delivery_at": row["expected_delivery_at"],
+                "delivered_at": delivered_at,
+                "shipping_cost": float(row["shipping_cost"]),
+                "created_at": row["created_at"],
             }
         )
 
-        shipment_id += 1
+    shipments = pd.DataFrame(shipment_rows)
 
-    shipments = pd.DataFrame(
-        shipment_rows
-    )
-
-    # Orders with unresolved delivery exceptions
-    # have been shipped but not delivered.
     if exception_order_ids:
-
         updated_orders.loc[
-            updated_orders[
-                "order_id"
-            ].isin(
-                exception_order_ids
-            ),
+            updated_orders["order_id"].isin(exception_order_ids),
             "order_status",
         ] = "shipped"
 
-    return (
-        updated_orders,
-        shipments,
-    )
+    return updated_orders, shipments
 
 
 
