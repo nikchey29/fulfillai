@@ -545,6 +545,36 @@ def load_split(
         split_name=split_name,
     )
 
+    # Phase 9 task-level population eligibility.
+    #
+    # Apply this only AFTER validating the original Phase 7 artifact so
+    # metadata row-count integrity remains independently verified.
+    if task.eligibility_column is not None:
+        column = task.eligibility_column
+
+        if column not in frame.columns:
+            raise MLDataError(
+                f"{task.name}/{split_name}: "
+                f"eligibility column {column!r} is missing."
+            )
+
+        eligibility = (
+            pd.to_numeric(
+                frame[column],
+                errors="coerce",
+            )
+            .fillna(0)
+            .eq(1)
+        )
+
+        frame = frame.loc[eligibility].copy()
+
+        if frame.empty:
+            raise MLDataError(
+                f"{task.name}/{split_name}: "
+                "eligibility filtering removed every row."
+            )
+
     return LoadedSplit(
         name=split_name,
         frame=frame,

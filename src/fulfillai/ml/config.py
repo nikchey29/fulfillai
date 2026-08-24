@@ -74,6 +74,10 @@ class MLTaskConfig:
 
     threshold_metric: str | None = None
 
+    # Optional Phase 9 population eligibility flag.
+    # When set, rows are retained only when this column == 1.
+    eligibility_column: str | None = None
+
 
 # ======================================================================
 # Demand forecasting
@@ -131,6 +135,8 @@ LATE_DELIVERY = MLTaskConfig(
     positive_class=1,
 
     threshold_metric="f1",
+
+    eligibility_column="is_delivered",
 )
 
 
