@@ -63,6 +63,8 @@ SEMANTIC_NUMERIC_COLUMNS = {
     "processing_hours",
     "promised_total_hours",
     "expected_transit_hours",
+    "processing_share_of_promise",
+    "remaining_window_share_of_promise",
     "shipping_cost_pct_of_order",
     "shipping_cost_per_unit",
     "shipping_cost_per_kg",
