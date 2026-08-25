@@ -1,71 +1,52 @@
 # FulfillAI Architecture
 
-FulfillAI is an end-to-end e-commerce operations intelligence and machine-learning system. The current repository implements the batch data and ML path. Streaming, serving, dashboards, and cloud deployment remain optional extensions.
+FulfillAI has two connected paths: a batch data/ML workflow and a small platform workflow around the frozen artifacts. The batch path owns data generation, validation, feature construction, and model evaluation. The platform path adds dbt, serving, experiment tracking, streaming, and BI without reopening the historical final tests.
 
 ## 1. Current end-to-end architecture
 
 ```mermaid
 flowchart TB
-    subgraph S[Simulation]
-        C[configs/data_generation.yaml]
-        G[src/fulfillai/data/generator.py]
-        C --> G
-        G --> CSV[data/raw/synthetic/*.csv]
-        CSV --> DV[src/fulfillai/data/validation.py]
+    subgraph S[Operational simulation]
+        CFG[configs/data_generation.yaml] --> GEN[Synthetic generator]
+        GEN --> CSV[data/raw/synthetic/*.csv]
+        CSV --> VAL[Relational + temporal validation]
     end
 
-    subgraph DB[Operational data platform]
-        PG[(PostgreSQL 17)]
-        SCH[sql/schema/001_core_schema.sql]
-        LOAD[src/fulfillai/data/load.py]
-        SCH --> PG
-        DV --> LOAD --> PG
+    subgraph DB[Operational data]
+        VAL --> LOAD[Atomic PostgreSQL load]
+        SCH[Core schema] --> PG[(PostgreSQL 17)]
+        LOAD --> PG
     end
 
-    subgraph SQL[Analytical layer]
-        M1[001_order_facts]
-        M2[002_daily_product_demand]
-        M3[003_warehouse_product_daily]
-        M4[004_delivery_features]
-        M5[005_inventory_risk_features]
-        BI[sql/analytics/*.sql]
-        PG --> M1
-        PG --> M2
-        PG --> M3
-        PG --> M4
-        PG --> M5
-        PG --> BI
-    end
-
-    subgraph F[Feature pipeline]
-        FC[src/fulfillai/features/config.py]
-        EX[src/fulfillai/features/extract.py]
-        VA[src/fulfillai/features/validate.py]
-        SP[src/fulfillai/features/split.py]
-        BF[src/fulfillai/features/build_features.py]
-        PQ[data/processed/features/*/*.parquet]
-        META[metadata + manifest JSON]
-        M2 --> EX
-        M4 --> EX
-        M5 --> EX
-        FC --> EX --> VA --> SP --> BF
-        BF --> PQ
-        BF --> META
+    subgraph A[Analytics + features]
+        PG --> SQL[SQL analytical views]
+        PG --> DBT[dbt staging + marts]
+        SQL --> CONTRACT[Feature contracts]
+        CONTRACT --> PQ[Chronological Parquet splits]
     end
 
     subgraph ML[Modeling]
-        DMD[Demand forecasting / hurdle]
-        DEL[Delivery V2 classification]
-        INV[Inventory risk classification]
-        ART[artifacts/ models + metrics]
-        PQ --> DMD
-        PQ --> DEL
-        PQ --> INV
-        DMD --> ART
+        PQ --> DEM[Demand hurdle model]
+        PQ --> DEL[Delivery V2 models]
+        PQ --> INV[Inventory risk models]
+        DEM --> ART[Frozen artifacts + metrics]
         DEL --> ART
         INV --> ART
     end
+
+    subgraph P[Platform layer]
+        ART --> API[FastAPI]
+        ART --> MLF[MLflow result tracking]
+        GEN --> EVENTS[Order-event producer]
+        EVENTS --> RP[Redpanda / Kafka API]
+        RP --> SPARK[PySpark Structured Streaming]
+        SPARK --> SINK[(PostgreSQL streaming metrics)]
+        DBT --> BI[BI export]
+        BI --> TAB[Tableau Public]
+    end
 ```
+
+The two paths share the same domain and source assumptions, but they have different responsibilities. The platform layer is allowed to consume frozen artifacts; it is not allowed to turn an already-used test partition back into a tuning surface.
 
 ## 2. Operational data model
 
@@ -207,18 +188,19 @@ models/*
 
 This keeps the public repository lightweight and avoids accidentally publishing large Parquet or Joblib files. Reproducibility comes from source code, deterministic configuration, metadata contracts, and documented final results.
 
-## 9. Future architecture extensions
+## 9. Platform boundaries and open extensions
 
-The repository contains placeholder packages for API/analytics/streaming, but these are not presented as implemented features. Natural next components are:
+The platform additions are intentionally narrower than a production commerce system. The repository currently contains working local paths for dbt, API serving, MLflow, Redpanda/PySpark streaming, PostgreSQL reconciliation, Docker, and Tableau. Azure Container Apps is represented by Bicep but has not been treated as a completed deployment.
+
+The next architectural questions I am interested in are monitoring, online/offline feature consistency, and tighter reconciliation between batch and streaming outputs:
 
 ```mermaid
 flowchart LR
-    PG[(PostgreSQL)] --> API[Prediction / analytics API]
-    PG --> BI[BI dashboard]
-    EVT[Order events] --> BUS[Kafka / Redpanda]
-    BUS --> CONS[Streaming consumers]
-    CONS --> PG
-    API --> MON[Monitoring / drift / latency]
+    BATCH[Batch analytical state] --> REC[Reconciliation]
+    STREAM[Streaming operational state] --> REC
+    REC --> MON[Data + prediction monitoring]
+    MON --> ALERT[Segment-level alerts]
+    API[FastAPI] --> MON
 ```
 
-These are optional extensions after the completed data + ML core.
+Those are intentionally left as open work rather than drawn as finished components.

@@ -1,6 +1,6 @@
 # Repository and Reproduction Guide
 
-This guide is the shortest safe path for working with FulfillAI without accidentally violating the project’s train/validation/test discipline.
+This is the shortest safe path for working with FulfillAI without accidentally breaking the train/validation/test boundaries that the completed experiments depend on.
 
 ## 1. What is version-controlled
 
@@ -8,10 +8,12 @@ Tracked source includes:
 
 - configuration;
 - PostgreSQL schema;
-- SQL models and analytics;
+- SQL and dbt models;
 - Python data-generation and validation code;
 - feature-contract and materialization code;
 - ML training / validation / final-test code;
+- API, MLOps, and streaming code;
+- infrastructure definitions;
 - documentation and source-level tests.
 
 Generated data and trained artifacts are deliberately ignored.
@@ -24,9 +26,12 @@ data/processed/synthetic/*
 data/processed/features/*
 artifacts/*
 models/*
+mlruns/*
+dbt/target/*
+dbt/logs/*
 ```
 
-This prevents large datasets and binary model files from bloating the repository and reduces the chance of accidentally publishing a final-test artifact.
+This keeps generated data and binary artifacts out of source control and reduces the chance of accidentally committing credentials or final-test outputs.
 
 ## 3. Environment setup
 
@@ -37,7 +42,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Set PostgreSQL credentials in `.env`.
+Set local PostgreSQL credentials in `.env`.
 
 ## 4. Fast source verification
 
@@ -57,9 +62,9 @@ This checks:
 - duplicate YAML keys;
 - required repository files.
 
-It does **not** train models or open Parquet test partitions.
+It does **not** train models or open generated Parquet test partitions.
 
-## 5. Data pipeline
+## 5. Batch data path
 
 ```bash
 make db-up
@@ -73,11 +78,11 @@ make build-features
 
 Equivalent raw commands are documented in the root README.
 
-## 6. SQL layer
+## 6. SQL and dbt
 
-`make sql-models` applies the SQL model files in lexical order. It expects `.env` to define the same PostgreSQL database/user used by Docker Compose.
+`make sql-models` applies the hand-written SQL model files in lexical order.
 
-To inspect business analytics separately, run the query files under `sql/analytics/` with `psql` or a SQL client.
+The dbt project under `dbt/` provides a second analytical layer with sources, staging views, marts, and schema tests. Local dbt credentials belong in ignored local configuration rather than in the repository.
 
 ## 7. Feature artifacts
 
@@ -89,13 +94,13 @@ delivery_prediction/
 inventory_risk/
 ```
 
-Each contains chronological Train, Validation, and Test Parquet partitions plus metadata. Predictor selection comes from the metadata / feature contract rather than ad-hoc notebook column selection.
+Each contains chronological Train, Validation, and Test Parquet partitions plus metadata. Predictor selection comes from the feature contract rather than ad-hoc column selection inside a notebook.
 
 ## 8. Modeling source
 
 ### Demand
 
-The demand folder intentionally retains the experiment lineage rather than deleting earlier stages:
+The demand folder intentionally keeps the experiment lineage:
 
 - baselines;
 - Poisson;
@@ -108,29 +113,41 @@ The demand folder intentionally retains the experiment lineage rather than delet
 - final refit;
 - one-time final test.
 
-This makes the reasoning auditable but means not every script should be run blindly in sequence after the final test has already been completed.
+Earlier experiments remain because they explain the path to the final architecture. They should not all be rerun blindly after the frozen test has already been completed.
 
 ### Delivery and inventory
 
-The shared `ml/modeling/common_binary.py` layer handles candidate selection, threshold selection, final refit, and guarded one-time test evaluation.
+The shared `ml/modeling/common_binary.py` layer handles candidate comparison, threshold selection, final refit, and guarded one-time test evaluation.
 
-Delivery V2 has its own namespace so the original V1 experiment remains historically intact.
+Delivery V2 has its own namespace so the original V1 experiment remains intact.
 
 ## 9. Final-test safety
 
-Do not rerun completed one-time test evaluations simply to obtain a different number.
+Do not rerun a completed one-time test simply to see whether a small code change improves the number.
 
 For a genuinely new experiment:
 
-1. create a versioned architecture / feature change;
-2. make all choices using train + validation only;
-3. freeze the source;
-4. use a new untouched holdout or a clearly versioned benchmark protocol;
-5. record results without modifying the model because of the test score.
+1. create a versioned architecture or feature change;
+2. make decisions using Train and Validation only;
+3. freeze the source and model configuration;
+4. use a new untouched holdout or clearly versioned benchmark protocol;
+5. record the result without tuning back against that holdout.
 
-## 10. Public repository checklist
+## 10. Platform verification
 
-Before pushing a portfolio update:
+The local platform pieces can be checked independently of the frozen test set:
+
+- `dbt build` for analytics engineering;
+- Docker Compose configuration and service health;
+- FastAPI `/health` and model-discovery endpoints;
+- MLflow service availability;
+- the Phase 14 streaming verification script;
+- the Phase 14B PostgreSQL sink reconciliation script;
+- the Tableau Public link and local screenshot reference.
+
+See [`platform_engineering.md`](platform_engineering.md) for the current state of each component.
+
+## 11. Before pushing changes
 
 ```bash
 make verify
@@ -138,18 +155,6 @@ git diff --check
 git status --short
 ```
 
-Also verify manually that no `.env`, Parquet, Joblib, raw CSV, or credential file is staged.
+Also check that local credentials, generated Parquet/CSV files, model binaries, dbt build output, MLflow state, and temporary backups are not staged.
 
-## 11. Recommended GitHub presentation
-
-Keep the repository landing page focused on:
-
-- what problem the system solves;
-- architecture diagram;
-- the data/ML engineering decisions;
-- final metrics;
-- leakage and temporal evaluation discipline;
-- quick-start instructions;
-- honest limitations.
-
-Do not bury the strongest result behind a long phase-by-phase development diary. The phase history belongs in source comments and supporting docs; the README should explain the finished system.
+I prefer keeping the repository small enough that the source, assumptions, and experiment history are easy to inspect without downloading generated data.

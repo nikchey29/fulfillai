@@ -1,4 +1,4 @@
-# ML Methodology and Scientific Integrity
+# ML Methodology
 
 This document explains the evaluation rules behind FulfillAI. These rules are as important as the model classes themselves because the project contains time-dependent forecasting and rare-event classification.
 
@@ -155,7 +155,7 @@ Delivery V2 changes the synthetic data-generating process so event risk depends 
 
 The same validation → freeze → final-refit → one-time-test discipline was then rerun on V2.
 
-This distinction matters in interviews: the improvement is not presented as "we tuned until test PR-AUC increased." It is presented as "the original simulation had no predictive signal; we diagnosed the data-generating process, versioned the benchmark, and reran a clean experiment."
+The important distinction is that Delivery V2 is a new benchmark version, not a post-test rescue of V1. The original simulation had little predictive signal in shipment-time-safe features; I diagnosed that problem, changed the data-generating process in a versioned benchmark, and reran the experiment from the beginning.
 
 ## 9. Test-lock implementation
 

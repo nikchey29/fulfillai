@@ -1,56 +1,43 @@
-# FulfillAI Roadmap
+# Things I Still Want to Explore
 
-The **core data + ML benchmark is complete and frozen**. The current working phase is a production/platform expansion that adds demonstrable engineering skills without changing historical final-test results.
+FulfillAI is complete enough to run as a coherent batch + platform project, but there are several directions I still find interesting. This file is a list of questions I would like to investigate, not a checklist of tools to add.
 
-## Completed core benchmark
+## 1. Replace part of the synthetic world
 
-- deterministic synthetic e-commerce fulfillment simulation;
-- comprehensive data validation;
-- PostgreSQL operational schema and atomic load;
-- SQL analytical models and KPI queries;
-- leakage-safe feature contracts;
-- chronological Parquet train/validation/test materialization;
-- zero-inflated demand forecasting;
-- Delivery V1 scientific diagnosis and preserved benchmark;
-- Delivery V2 redesigned benchmark;
-- 7-day stockout and reorder-breach risk modeling;
-- frozen final refits and one-time test evaluation;
-- documented final results.
+The synthetic generator is useful because every event and label can be traced back to known rules. The tradeoff is that synthetic relationships can become cleaner than real operations.
 
-## Platform expansion — source implemented, hands-on verification in progress
+A useful next experiment would be to replace one part of the system with a public fulfillment, logistics, inventory, or retail dataset and keep the same leakage-safe evaluation structure. I am especially interested in seeing which feature assumptions fail first.
 
-### Phase 12 — MLOps / serving
-- FastAPI frozen-model serving layer;
-- Docker API container;
-- MLflow frozen-result tracking;
-- machine-readable frozen-result manifest.
+## 2. Monitoring after inference
 
-### Phase 13 — analytics engineering
-- dbt PostgreSQL sources;
-- staging models;
-- fulfillment fact mart;
-- warehouse-day KPI mart;
-- dbt schema tests.
+The current project is careful before and during evaluation, but it does not yet have a full monitoring loop after predictions are served.
 
-### Phase 14 — streaming
-- Redpanda/Kafka-compatible event broker;
-- order-event producer;
-- PySpark Structured Streaming consumer;
-- watermarking and 5-minute operational windows.
+I would like to add:
 
-### Phase 15 — DevOps / cloud
-- GitHub Actions source CI;
-- tagged Docker image build/push to GHCR;
-- Azure Container Apps Bicep deployment template.
+- feature-distribution drift checks;
+- prediction-distribution monitoring;
+- segment-level metrics by warehouse / carrier / product family;
+- latency and error-rate monitoring for the API;
+- alerts that distinguish data-quality failures from model-quality changes.
 
-### Phase 16 — BI
-- Tableau-ready dbt marts;
-- one-page operational dashboard to be built/published interactively.
+## 3. Bring batch and streaming closer together
 
-## Resume rule
+The batch and streaming paths currently share the same domain but remain separate execution modes.
 
-A technology becomes a resume skill only after its verification gate has been run successfully. See `docs/platform_engineering.md`.
+A deeper version of the project would define a clearer contract between them: which metrics are computed in real time, which are reconciled in batch, and how late events or replayed events change the operational state.
 
-## Future scientific extension
+## 4. Deploy the API for real
 
-The most valuable later scientific step is replacing synthetic data with a public or enterprise-like fulfillment dataset and rerunning the leakage-safe evaluation structure as a new benchmark version.
+The repository includes Azure Container Apps Bicep, but I have intentionally left it described as infrastructure code rather than a completed deployment.
+
+A future pass would build and publish the container, deploy it, verify the public health and inference endpoints, and then document the actual runtime behavior rather than the intended one.
+
+## 5. Cost-sensitive decisions
+
+The classification thresholds are currently selected from validation metrics. A more operational treatment would attach explicit costs to false positives and false negatives and choose thresholds from those costs.
+
+That would make the decision layer easier to connect to questions such as expediting a shipment, reallocating inventory, or triggering a manual review.
+
+## 6. Better uncertainty for demand
+
+The demand model currently produces point forecasts. I would like to explore prediction intervals or quantile forecasts so downstream inventory decisions can distinguish between a stable forecast and one with large uncertainty.

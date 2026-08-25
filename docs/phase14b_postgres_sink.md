@@ -1,13 +1,22 @@
 # Phase 14B — Streaming PostgreSQL Sink
 
-This phase extends the Redpanda + PySpark Structured Streaming pipeline with a
-real PostgreSQL sink.
+Phase 14B takes the checkpointed Redpanda/PySpark path one step further and writes the windowed aggregates back into PostgreSQL.
 
 ## Data path
 
-Python event producer → Redpanda (Kafka API) → PySpark Structured Streaming →
-schema validation → event-time watermark → 1-minute warehouse/event aggregates →
-idempotent PostgreSQL UPSERT.
+```text
+Python event producer
+   ↓
+Redpanda (Kafka API)
+   ↓
+PySpark Structured Streaming
+   ↓
+schema validation + event-time watermark
+   ↓
+1-minute warehouse/event aggregates
+   ↓
+idempotent PostgreSQL UPSERT
+```
 
 ## PostgreSQL object
 
@@ -20,19 +29,19 @@ Primary key:
 - `warehouse_id`
 - `event_type`
 
-Each Spark micro-batch overwrites the latest aggregate for the same logical
-window/group instead of adding duplicate rows. This makes repeated micro-batch
-processing safe for the materialized aggregate state.
+Each Spark micro-batch updates the latest aggregate for the same logical window/group rather than appending a duplicate. That makes replaying a processed batch safe for the materialized aggregate state.
 
-## Validation
+## What the verification checks
 
-The demo performs two producer/Spark rounds with the same checkpoints and checks:
+The script runs two producer/Spark rounds with the same checkpoint and reconciles the result with PostgreSQL:
 
-- 187 total input events
-- 180 valid events
-- 7 rejected events
-- both round1 and round2 processed
-- PostgreSQL aggregate event sum reconciles to 180
-- PostgreSQL rows exist
-- checkpoint state exists
-- frozen ML test partitions are not accessed
+- 187 input events;
+- 180 valid events;
+- 7 rejected events;
+- both `round1` and `round2` processed;
+- PostgreSQL aggregate event sum equals 180;
+- persisted aggregate rows exist;
+- checkpoint state exists;
+- frozen ML test partitions are not accessed.
+
+The point of the second round is not extra volume; it is proving that checkpoint reuse and the sink's upsert semantics behave correctly when the stream resumes.

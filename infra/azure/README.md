@@ -1,13 +1,13 @@
-# Azure Container Apps deployment
+# Azure Container Apps deployment template
 
-This is the deployment layer for the containerized FastAPI service. It does not retrain models or open frozen test partitions.
+This directory contains the infrastructure definition for running the containerized FulfillAI FastAPI service on Azure Container Apps. It does not retrain models or open frozen test partitions.
 
 ## Prerequisites
 
 - Azure CLI (`az`)
 - Bicep (included with current Azure CLI installations)
-- a resource group
-- a publicly readable container image (for example a GHCR image created by the repository container workflow)
+- an Azure resource group
+- a publicly readable container image, such as a GHCR image produced by the repository container workflow
 
 ## Deploy
 
@@ -19,6 +19,8 @@ az deployment group create \
   --parameters containerImage=ghcr.io/YOUR_GITHUB_USER/fulfillai-api:v1.1.0
 ```
 
-After successful deployment, use the output URL and verify `/health` and `/v1/results`.
+After deployment, verify the returned URL with `/health` and `/v1/results`.
 
-Only after completing this real deployment should Azure Container Apps be claimed as a deployed FulfillAI skill on the resume.
+## Current status
+
+The Bicep template is part of the repository, but this path is intentionally documented as **not yet deployed**. I would rather leave that boundary visible than turn an infrastructure definition into a claim about a runtime I have not verified.

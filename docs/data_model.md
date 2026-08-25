@@ -89,8 +89,7 @@ Examples include:
 - order_delivered
 - order_cancelled
 
-The event table is designed to support the streaming architecture planned
-for later project phases.
+The event table is also the source domain for the Redpanda/PySpark streaming path, which replays FulfillAI order events into windowed operational metrics.
 
 ## Current Modeling Assumption
 
@@ -99,5 +98,4 @@ FulfillAI v1 assigns an order to one primary fulfillment warehouse.
 Multiple shipments are supported for an order, but multi-warehouse
 fulfillment of a single order is outside the initial scope.
 
-If future requirements require split fulfillment across warehouses, the
-model can be extended with an order-item fulfillment allocation table.
+Split fulfillment across warehouses would require an order-item fulfillment allocation table; that case is intentionally outside the current model.

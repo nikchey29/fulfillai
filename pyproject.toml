@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fulfillai"
 version = "1.1.0"
-description = "End-to-end synthetic e-commerce fulfillment data, ML, and platform engineering project"
+description = "Synthetic e-commerce fulfillment system spanning data, ML, analytics, and streaming"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "Chaithanya Vemuri"}]

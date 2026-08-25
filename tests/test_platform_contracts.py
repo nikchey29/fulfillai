@@ -17,7 +17,7 @@ def test_frozen_result_manifest_is_immutable_and_matches_public_results():
 def test_hurdle_docs_match_hard_gated_implementation():
     docs = "\n".join(
         (ROOT / rel).read_text(encoding="utf-8")
-        for rel in ["README.md", "docs/architecture.md", "docs/ml_methodology.md", "docs/results.md", "docs/portfolio.md"]
+        for rel in ["README.md", "docs/architecture.md", "docs/ml_methodology.md", "docs/results.md", "docs/build_notes.md"]
     )
     lowered = docs.lower()
     assert "full hurdle expectation" not in lowered

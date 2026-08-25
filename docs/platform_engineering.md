@@ -1,34 +1,42 @@
-# FulfillAI Platform / MLOps Expansion
+# FulfillAI Platform Layer
 
-This layer expands the frozen data/ML benchmark into a demonstrable data-platform and MLOps portfolio system without altering the historical final-test results.
+The first version of FulfillAI was batch-first: generate operational data, load PostgreSQL, build features, train models, and freeze the results. Once that path was stable, I added a platform layer around the same data and model artifacts to see how they behave when serving, analytics engineering, streaming, and orchestration enter the picture.
 
-## Implemented code surfaces
+None of these additions change the historical frozen-test results.
 
-- **dbt + PostgreSQL:** source declarations, schema tests, staging views, fulfillment fact mart, warehouse-day KPI mart.
-- **FastAPI:** health, frozen-results, model-discovery, and frozen-artifact inference endpoints.
-- **Docker:** reproducible API container plus composable infrastructure services.
-- **MLflow:** immutable frozen benchmark metrics can be logged as an experiment/evidence run without retraining.
-- **Redpanda/Kafka API:** event producer for FulfillAI order events.
-- **PySpark Structured Streaming:** Kafka consumer with watermarking and 5-minute warehouse/event windows.
-- **GitHub Actions:** source CI and API image build/push workflow.
-- **Azure Container Apps IaC:** Bicep template for deploying the API image.
-- **Tableau-ready marts:** dbt models and a concrete dashboard build plan.
+## Components
 
-## Scientific boundary
+- **dbt + PostgreSQL** — source declarations, schema tests, staging views, a fulfillment fact mart, and a warehouse-day KPI mart.
+- **FastAPI** — health, frozen-results, model-discovery, and frozen-artifact inference endpoints.
+- **Docker** — reproducible containers for the API, MLflow, and Spark workloads.
+- **MLflow** — records frozen benchmark metrics as experiment runs without retraining the models.
+- **Redpanda / Kafka API** — carries FulfillAI order events.
+- **PySpark Structured Streaming** — consumes events, applies watermarking, and builds warehouse/event windows. The reusable library pipeline defaults to five-minute windows; the compact Phase 14 verification script uses one-minute windows to keep the local run short.
+- **PostgreSQL streaming sink** — persists windowed streaming metrics with idempotent upsert behavior.
+- **GitHub Actions** — source checks plus an API container build workflow.
+- **Tableau** — an executive operations dashboard built from the analytical export.
+- **Azure Container Apps IaC** — a Bicep template for a future API deployment.
 
-The V1/V2 frozen model scores remain historical evidence. Platform work wraps those artifacts; it does not tune models against already-seen test data.
+## Verification notes
 
-## Resume-claim policy
+The local platform path has been exercised end to end for the parts that can run locally:
 
-A technology should be listed as hands-on only after the corresponding local or cloud verification has actually been run:
-
-| Technology | Evidence required before resume claim |
+| Component | What was checked |
 |---|---|
-| dbt | `dbt build` succeeds against FulfillAI PostgreSQL |
-| FastAPI | local `/health`, `/v1/results`, and one artifact-backed `/predict` request |
-| Docker | API image builds and container serves successfully |
-| MLflow | a visible FulfillAI experiment/run is created |
-| Redpanda | producer publishes events to the local topic |
-| PySpark | Structured Streaming consumes and produces windowed output |
-| Tableau | dashboard workbook is built from dbt marts |
-| Azure | API is actually deployed and `/health` responds from Azure |
+| dbt | build completed against FulfillAI PostgreSQL with the model/tests passing |
+| FastAPI | service started and returned model metadata from the frozen artifacts |
+| Docker | Compose configurations validated and the API / MLflow services ran locally |
+| MLflow | local service responded successfully |
+| Redpanda | broker and console started as part of the streaming stack |
+| PySpark | two streaming rounds completed against the same checkpoint |
+| PostgreSQL sink | streaming aggregates reconciled back to PostgreSQL |
+| Tableau | dashboard built, cross-filtered, and published to Tableau Public |
+| Azure | template exists; deployment has not been completed |
+
+I keep the last row explicit because infrastructure code and a verified deployment are different things.
+
+## Boundary around the frozen experiments
+
+The platform code consumes frozen model artifacts and recorded metrics. It does not reopen the historical test partitions or retune a model because a serving or streaming component was added later.
+
+That separation lets the project evolve operationally without quietly changing what the original model results mean.

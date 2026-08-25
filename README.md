@@ -1,123 +1,60 @@
 # FulfillAI
 
-**Leakage-safe e-commerce operations intelligence and machine-learning platform**
+**A supply-chain data and machine-learning system built around one idea: predictions are only useful when the data path behind them is trustworthy.**
 
-FulfillAI is a portfolio-scale Data + ML system that simulates an e-commerce fulfillment network, validates and loads the data into PostgreSQL, builds analytical SQL views, materializes chronological machine-learning datasets, and evaluates forecasting and risk models under a strict train → validation → frozen-test protocol.
+I started FulfillAI because I wanted to work through the parts of an ML system that usually get skipped in small projects. Instead of beginning with a clean dataset, I began with the operational side: customers, products, warehouses, inventory, orders, shipments, and events. From there I built the path into PostgreSQL, analytical models, leakage-safe feature sets, forecasting and risk models, streaming, serving, and a small BI layer.
 
-The core data and ML pipeline is complete. The repository currently contains synthetic data generation, data-quality checks, PostgreSQL modeling, SQL analytics, feature engineering, demand forecasting, delivery-risk modeling, inventory-risk modeling, and reproducibility safeguards. API serving, streaming, BI dashboards, and deployment are documented as future extensions rather than presented as finished work.
+The project grew in stages, and I kept the mistakes that taught me something. The clearest example is Delivery V1: the first synthetic benchmark was technically valid but barely learnable. Rather than hiding the weak result, I kept it, traced the problem back to the data-generating process, versioned the benchmark, and rebuilt the experiment as Delivery V2.
 
-## Why this project is technically interesting
+## What is here
 
-FulfillAI is not just a collection of notebooks. The project focuses on problems that appear in real ML systems:
+FulfillAI currently includes:
 
-- **time-aware evaluation** instead of random train/test splitting;
-- **feature leakage prevention** through explicit contracts and SQL cutoffs;
-- **imbalanced classification** evaluated primarily with PR-AUC;
-- **intermittent / zero-inflated demand** handled with a hurdle architecture;
-- **model freeze discipline** before final test evaluation;
-- **one-time test guards** that prevent repeated test-set tuning;
-- **reproducible synthetic data generation** with deterministic seeds;
-- **database-to-Parquet ML feature pipelines** with metadata and row-contract checks;
-- **scientific redesign of an unlearnable synthetic benchmark** for Delivery V2.
+- deterministic synthetic fulfillment data generation;
+- relational and temporal data-quality checks;
+- PostgreSQL operational modeling and analytical SQL;
+- dbt staging and mart models with tests;
+- chronological feature materialization to Parquet;
+- demand forecasting for intermittent / zero-inflated demand;
+- late-delivery, delivery-exception, stockout, and reorder-breach models;
+- explicit leakage contracts and one-time final-test guards;
+- FastAPI endpoints around frozen model artifacts;
+- MLflow logging for frozen experiment results;
+- Redpanda/Kafka-compatible events with PySpark Structured Streaming;
+- a PostgreSQL streaming sink with restart/checkpoint validation;
+- Docker Compose environments for the platform pieces;
+- GitHub Actions for source checks and container builds;
+- a published Tableau Public operations dashboard;
+- Azure Container Apps infrastructure-as-code as an undeployed extension.
 
-## Final model results
-
-The following values are from the completed frozen test runs. Generated model and metric artifacts are intentionally excluded from Git, so the durable project summary is documented in [`docs/results.md`](docs/results.md).
-
-| Task | Final model / architecture | Primary final-test result | Key comparison |
-|---|---|---:|---|
-| Daily demand forecasting | Hurdle: occurrence classifier + magnitude regressor | **69.588% WAPE** | 21.14% relative WAPE improvement vs rolling-28 baseline |
-| Late-delivery risk, V2 | Balanced logistic regression | **0.303115 PR-AUC** | 3.28× test prevalence baseline |
-| Delivery-exception risk, V2 | Balanced logistic regression | **0.167229 PR-AUC** | 4.13× test prevalence baseline |
-| 7-day stockout risk | Random forest | **0.359567 PR-AUC** | ROC-AUC 0.992886; recall 0.832911 |
-| 7-day reorder-breach risk | Random forest | **0.998317 PR-AUC** | F1 0.975801 |
-
-Delivery V1 is preserved as the original benchmark. Its weak final results exposed a data-generation flaw: the synthetic delivery labels were nearly independent of prediction-time-safe features. Delivery V2 corrected the simulation so risk is generated from shipment-time variables, then repeated the full validation → freeze → one-time-test process. This is documented as a **data-generating-process correction**, not as ordinary post-test model tuning.
-
-## System architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    A[Deterministic synthetic generator] --> B[CSV datasets]
-    B --> C[Data-quality validation]
-    C --> D[(PostgreSQL 17)]
-    D --> E[Analytical SQL models / views]
-    D --> F[Business analytics SQL]
-    E --> G[Leakage-safe feature contracts]
-    G --> H[Chronological Parquet splits]
-    H --> I[TRAIN]
-    H --> J[VALIDATION]
-    H --> K[TEST locked]
-    I --> L[Model candidates]
-    J --> L
-    L --> M[Freeze architecture + threshold]
-    M --> N[Final refit on TRAIN + VALIDATION]
-    N --> O[Commit / clean-tree gate]
-    O --> K
-    K --> P[One-time final test]
-    P --> Q[Immutable final metrics]
+    A[Deterministic simulation] --> B[Validation]
+    B --> C[(PostgreSQL)]
+    C --> D[SQL / dbt models]
+    D --> E[Leakage-safe feature contracts]
+    E --> F[Chronological Parquet splits]
+    F --> G[Forecasting + risk models]
+    G --> H[Frozen model artifacts]
+    H --> I[FastAPI]
+    H --> J[MLflow result tracking]
+
+    A --> K[Order events]
+    K --> L[Redpanda / Kafka API]
+    L --> M[PySpark Structured Streaming]
+    M --> N[(PostgreSQL streaming metrics)]
+
+    D --> O[BI export]
+    O --> P[Tableau Public]
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the detailed component view and [`docs/ml_methodology.md`](docs/ml_methodology.md) for the evaluation protocol.
+The deeper component view is in [`docs/architecture.md`](docs/architecture.md).
 
-## Data platform
+## The part I care about most: evaluation discipline
 
-The default synthetic simulation covers **2025-08-01 through 2026-07-31** and is configured for:
-
-- 5,000 customers
-- 300 products across 12 categories
-- 5 fulfillment warehouses in the US, Germany, UK, and Canada
-- 50,000 orders
-- shipments, order events, and inventory movements
-- seasonality, weekends, holidays, cancellations, carrier behavior, shipping services, and inventory dynamics
-
-The PostgreSQL schema contains 10 core operational tables:
-
-`customers`, `product_categories`, `products`, `warehouses`, `inventory`, `orders`, `order_items`, `shipments`, `inventory_movements`, and `order_events`.
-
-Six analytical SQL queries cover executive KPIs, warehouse performance, product demand, inventory risk, order lifecycle, and carrier performance. Five SQL model files create the analytical feature layers used downstream.
-
-## ML tasks
-
-### 1. Demand forecasting
-
-**Target:** `units_sold` per `demand_date × warehouse × product`.
-
-The demand pipeline progresses from naive/rolling baselines through Poisson and HistGradientBoosting experiments, leakage discovery, stronger historical features, temporal robustness checks, and finally a **hurdle model** for zero-inflated demand:
-
-```text
-P(demand > 0)
-      ↓
-compare with frozen threshold 0.925
-      ↓
-  no → forecast 0
- yes → positive-demand magnitude model
-```
-
-The frozen implementation is therefore a **hard-gated two-stage hurdle forecast**:
-`I[P(demand > 0) >= 0.925] × predicted positive-demand magnitude`. The threshold was selected before the final test and was not retuned afterward.
-
-### 2. Delivery risk
-
-Two binary tasks use one row per shipment:
-
-- `is_late_delivery` — evaluated only for delivered shipments;
-- `is_delivery_exception` — evaluated for all eligible dispatched shipments.
-
-Delivery V2 makes synthetic risk depend on information available by shipment time, including carrier, shipping method, warehouse, processing pressure, and calendar effects. Outcome fields such as `delivered_at`, final `shipment_status`, `actual_transit_hours`, and `delivery_delay_hours` are prohibited as predictors.
-
-### 3. Inventory risk
-
-Two 7-day horizon classifiers operate at `demand_date × warehouse × product` grain:
-
-- `target_stockout_next_7d`
-- `target_reorder_breach_next_7d`
-
-Prediction-time features use prior-day inventory state and historical demand. Future inventory windows exist only for label construction and are explicitly excluded from the feature matrix.
-
-## Evaluation discipline
-
-The core split is chronological:
+The modeling workflow is chronological rather than randomly split:
 
 ```text
 TRAIN       2025-08-01 → 2026-04-30
@@ -125,7 +62,7 @@ VALIDATION  2026-05-01 → 2026-05-31
 TEST        2026-06-01 → 2026-07-31
 ```
 
-The workflow is deliberately strict:
+Validation is where architecture and threshold decisions are made. Test is treated as a final estimate after those decisions are frozen.
 
 ```text
 TRAIN
@@ -136,64 +73,172 @@ freeze decisions
   ↓
 TRAIN + VALIDATION
   ↓ final refit
-clean Git commit
+clean source state
   ↓
-TEST exactly once
+TEST once
   ↓
-no post-test model changes
+record final metrics
 ```
 
-The binary workflow refuses final test evaluation when the Git working tree is dirty and refuses to re-evaluate if the one-time test artifact already exists. The demand evaluator applies equivalent freeze checks.
+The binary evaluator refuses final-test access when the working tree is dirty and refuses a second evaluation once the final-test artifact exists. The demand pipeline uses equivalent freeze checks. These guards are intentionally stricter than a typical local experiment because I wanted the repository to make leakage and test reuse difficult by construction, not just by convention.
 
+See [`docs/ml_methodology.md`](docs/ml_methodology.md) for the full reasoning.
 
-## Platform / MLOps expansion
+## Final model results
 
-The repository also contains an optional production-engineering layer for hands-on practice with **dbt, FastAPI, Docker, MLflow, Redpanda/Kafka, PySpark Structured Streaming, GitHub Actions, Azure Container Apps IaC, and Tableau-ready marts**. These components wrap the frozen model artifacts; they do not change the historical final-test results. See [`docs/platform_engineering.md`](docs/platform_engineering.md).
+These are the frozen final-test results from the completed experiments. Large model/data artifacts are not stored in Git; the durable record is in [`docs/results.md`](docs/results.md).
 
-## Interactive Tableau dashboard
+| Task | Final model / architecture | Primary final-test result | Comparison |
+|---|---|---:|---|
+| Daily demand forecasting | Hard-gated hurdle: occurrence classifier + magnitude regressor | **69.588% WAPE** | 21.14% relative WAPE improvement vs rolling-28 baseline |
+| Late-delivery risk, V2 | Balanced logistic regression | **0.303115 PR-AUC** | 3.28× test prevalence baseline |
+| Delivery-exception risk, V2 | Balanced logistic regression | **0.167229 PR-AUC** | 4.13× test prevalence baseline |
+| 7-day stockout risk | Random forest | **0.359567 PR-AUC** | ROC-AUC 0.992886; recall 0.832911 |
+| 7-day reorder-breach risk | Random forest | **0.998317 PR-AUC** | F1 0.975801 |
 
-FulfillAI includes a published **Tableau Public executive dashboard** built from the project's BI-ready analytical export.
+The reorder result is unusually high because the data is synthetic and the future label is strongly determined by prior inventory state. I keep that caveat next to the result rather than treating it as evidence of real-world accuracy.
 
-[**View the live FulfillAI dashboard on Tableau Public**](https://public.tableau.com/app/profile/chaithanya.vemuri/viz/FullfillAI_Supplychain_Intelligence/FulfillAI-ExecutiveOverview)
+## A useful failure: Delivery V1 → V2
+
+Delivery V1 taught me more than a successful benchmark would have. Its final PR-AUC was close to prevalence even after legitimate modeling changes. The issue was upstream: late/exception outcomes in the simulation were almost independent of the features that would actually be available at prediction time.
+
+I kept V1 as part of the project history. Delivery V2 changes the synthetic data-generating process so risk depends on shipment-time-safe variables such as carrier, service level, warehouse pressure, and calendar effects. Then the entire validation → freeze → final-test process is run again as a new benchmark version.
+
+That distinction matters to me because changing a simulation after seeing a weak test result is not the same thing as improving a model. The repository documents the change as a benchmark redesign, not a hidden tuning step.
+
+## Demand forecasting
+
+Demand is sparse enough that a single regressor tends to spend most of its effort near zero. The final approach separates two questions:
+
+1. will demand be positive?
+2. if it is positive, how large will it be?
+
+The frozen prediction is hard-gated:
+
+```text
+P(demand > 0)
+      ↓
+threshold = 0.925
+   ↙       ↘
+below     above
+  ↓         ↓
+  0     magnitude model
+```
+
+This is not a probability-weighted expectation. The magnitude forecast is emitted only when the occurrence probability crosses the frozen threshold.
+
+## Delivery and inventory risk
+
+Delivery uses two separate shipment-level questions:
+
+- `is_late_delivery` for delivered shipments;
+- `is_delivery_exception` for eligible dispatched shipments.
+
+Post-outcome fields such as `delivered_at`, final shipment status, and actual transit time are excluded from predictors.
+
+Inventory models operate at `date × warehouse × product` grain and predict:
+
+- stockout in the next 7 days;
+- reorder-threshold breach in the next 7 days.
+
+The feature contract uses prior-day inventory state and historical demand while reserving future windows for label construction only.
+
+## Platform layer
+
+The original project was batch-first. I later added a platform layer around the frozen model artifacts without changing their historical test results.
+
+### Analytics engineering
+
+`dbt/` contains PostgreSQL sources, staging models, a fulfillment fact mart, a warehouse-day mart, and schema tests. The local build has been exercised against FulfillAI PostgreSQL.
+
+### API and experiment tracking
+
+`src/fulfillai/api/` exposes health, frozen-result, model-discovery, and artifact-backed prediction endpoints. `src/fulfillai/mlops/` records the already-frozen benchmark results in MLflow without retraining them.
+
+### Streaming
+
+The streaming path is deliberately small enough to understand end to end:
+
+```text
+order events
+   ↓
+Redpanda
+   ↓
+PySpark Structured Streaming
+   ↓
+watermark + windowed aggregates
+   ↓
+checkpointed output
+   ↓
+PostgreSQL sink
+```
+
+The verification scripts run the stream across multiple rounds with the same checkpoint so restart/resume behavior is part of the test, not an assumption.
+
+### Cloud
+
+`infra/azure/` contains a Bicep template for Azure Container Apps. It is included as infrastructure work, but I do not describe the Azure path as deployed because I have not treated an unverified template as a deployment.
+
+## Tableau dashboard
+
+I added a simple dashboard after the analytical layer was stable because I wanted the same data to be useful outside the modeling code.
+
+[**Open FulfillAI — Supply Chain Intelligence on Tableau Public**](https://public.tableau.com/app/profile/chaithanya.vemuri/viz/FullfillAI_Supplychain_Intelligence/FulfillAI-ExecutiveOverview)
 
 ![FulfillAI Executive Dashboard](docs/assets/tableau/fulfillai_executive_dashboard.png)
 
-The dashboard surfaces:
-- **50,000** total orders
-- **46,120** delivered shipments
-- **9.92%** late-delivery rate
-- **4.34%** delivery-exception rate
-- Warehouse-level order, late-delivery, and exception comparisons
-- Daily order-volume trends
-- Interactive warehouse cross-filtering and custom tooltips
+The dashboard uses the generated `warehouse_daily.csv` BI export rather than a live PostgreSQL connection. It includes total orders, delivered shipments, late-delivery and exception rates, warehouse comparisons, daily order volume, and warehouse cross-filtering.
 
-Tableau Public consumes the generated BI export rather than a live production PostgreSQL connection. See [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md) for implementation details.
+Implementation notes are in [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md).
+
+## Data model
+
+The default simulation covers **2025-08-01 through 2026-07-31** and creates:
+
+- 5,000 customers;
+- 300 products across 12 categories;
+- 5 warehouses across the US, Germany, UK, and Canada;
+- 50,000 orders;
+- shipments, order events, and inventory movements;
+- seasonality, weekends, holidays, cancellations, carrier behavior, shipping services, and inventory dynamics.
+
+The PostgreSQL core has 10 operational tables:
+
+`customers`, `product_categories`, `products`, `warehouses`, `inventory`, `orders`, `order_items`, `shipments`, `inventory_movements`, and `order_events`.
+
+The event and relational semantics are documented in [`docs/event_model.md`](docs/event_model.md) and [`docs/data_model.md`](docs/data_model.md).
 
 ## Repository layout
 
 ```text
 fulfillai/
-├── configs/                 # deterministic simulation configuration
-├── data/                    # generated data; contents ignored by Git
-├── docs/                    # architecture, methodology, results, portfolio notes
-├── scripts/                 # verification and guarded final-test helpers
+├── configs/                 # deterministic simulation settings
+├── data/                    # generated locally; ignored by Git
+├── dbt/                     # analytics engineering models and tests
+├── docker/                  # API, MLflow, and Spark images
+├── docs/                    # architecture, methodology, results, build notes
+├── infra/azure/             # Azure Container Apps Bicep template
+├── scripts/                 # verification, streaming, and guarded test helpers
 ├── sql/
 │   ├── schema/              # PostgreSQL operational schema
 │   ├── models/              # analytical / ML feature views
 │   └── analytics/           # business analysis queries
 ├── src/fulfillai/
-│   ├── data/                # generation, validation, atomic PostgreSQL load
-│   ├── features/            # extraction, validation, splitting, Parquet materialization
-│   └── ml/                  # demand, delivery, inventory workflows
-├── tests/                   # source-level contract tests
+│   ├── api/                 # frozen-artifact API
+│   ├── data/                # generation, validation, PostgreSQL load
+│   ├── features/            # extraction, contracts, chronological materialization
+│   ├── ml/                  # demand, delivery, and inventory experiments
+│   ├── mlops/               # MLflow result logging
+│   └── streaming/           # event producer and Spark pipeline
+├── tests/                   # source and platform contract tests
 ├── compose.yaml
-├── Makefile
-└── requirements*.txt
+├── compose.streaming.yaml
+└── Makefile
 ```
 
-## Quick start
+## Run the batch path locally
 
-### 1. Create the environment
+### 1. Environment
 
 ```bash
 python3.11 -m venv .venv
@@ -202,80 +247,67 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` with your local PostgreSQL password.
+Add your local PostgreSQL password to `.env`.
 
-### 2. Start PostgreSQL
+### 2. PostgreSQL
 
 ```bash
 docker compose up -d postgres
 ```
 
-### 3. Generate and validate the synthetic operational data
+### 3. Generate and validate data
 
 ```bash
 python -m src.fulfillai.data.generator
 python -m src.fulfillai.data.validation
 ```
 
-### 4. Load PostgreSQL atomically
-
-First run the preflight:
+### 4. Load PostgreSQL
 
 ```bash
 python -m src.fulfillai.data.load
-```
-
-Then perform the load:
-
-```bash
 python -m src.fulfillai.data.load --load --replace
 ```
 
-### 5. Create the analytical SQL views
-
-The included Makefile can apply all model SQL files in order:
+### 5. Build SQL models
 
 ```bash
 make sql-models
 ```
 
-### 6. Materialize leakage-safe ML datasets
+### 6. Materialize ML datasets
 
 ```bash
 python -m src.fulfillai.features.validate
 python -m src.fulfillai.features.build_features
 ```
 
-This writes chronological Parquet splits and reproducibility metadata under `data/processed/features/`.
+Chronological Parquet splits and metadata are written under `data/processed/features/`.
 
-### 7. Run source-level verification
+### 7. Verify source contracts
 
 ```bash
 make verify
 ```
 
-`make verify` does not open generated Parquet test partitions or train models. It checks imports, configuration contracts, duplicate YAML keys, required files, and Python syntax.
+`make verify` checks imports, configuration contracts, duplicate YAML keys, required files, and Python syntax. It does not train models or open generated test partitions.
 
 ## Reproducing modeling experiments
 
-The modeling source is intentionally kept separate from generated model artifacts. Read [`docs/repository_guide.md`](docs/repository_guide.md) before re-running experiments, especially the rules around final test partitions.
+The repository keeps experiment lineage on purpose, especially in the demand folder. Earlier baselines and intermediate approaches are still present because they explain how the final architecture was reached.
 
-The most important rule is simple: **validation is for decisions; test is for one final estimate.** Do not use final test results to retune the corresponding frozen experiment.
+Before rerunning completed experiments, read [`docs/repository_guide.md`](docs/repository_guide.md). The important boundary is simple: use validation to make decisions; do not use the frozen test set as another tuning loop.
 
-## Portfolio / interview material
+## Notes from building it
 
-Recruiter summary, resume bullets, LinkedIn wording, and technical interview talking points are in [`docs/portfolio.md`](docs/portfolio.md).
+[`docs/build_notes.md`](docs/build_notes.md) records the decisions, mistakes, and parts of the system I found most interesting while building FulfillAI. It is intentionally more personal than the architecture and methodology docs.
 
-## Current scope and future extensions
-
-**Implemented:** synthetic data platform, PostgreSQL, analytics SQL, feature engineering, chronological dataset materialization, demand forecasting, delivery-risk modeling, inventory-risk modeling, test-lock safeguards, and final evaluation.
-
-**Not yet implemented:** production API, real-time event broker, BI dashboard application, cloud deployment, model monitoring, and CI/CD. These are natural next steps and are listed in [`docs/roadmap.md`](docs/roadmap.md).
+[`docs/roadmap.md`](docs/roadmap.md) contains ideas I still want to explore rather than a list of technologies to collect.
 
 ## Technology
 
-Python 3.11 · PostgreSQL 17 · Docker Compose · Pandas · NumPy · scikit-learn · PyArrow · Psycopg · SQL · Joblib
+Python 3.11 · PostgreSQL 17 · SQL · dbt · Pandas · NumPy · scikit-learn · PyArrow · Psycopg · FastAPI · MLflow · Docker Compose · Redpanda · PySpark Structured Streaming · Tableau · GitHub Actions · Bicep
 
 ---
 
-FulfillAI is designed as an explainable portfolio project: every major model result is tied to a data contract, a temporal split, a validation decision, and a frozen final test.
+FulfillAI is synthetic by design. The point of the project is not to claim production business accuracy; it is to understand the full data-to-decision path, make the assumptions visible, and keep the evaluation honest when the project changes.

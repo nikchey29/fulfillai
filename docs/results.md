@@ -1,6 +1,6 @@
 # Final Model Results
 
-This file records the completed FulfillAI model evaluations observed in the final project run. Large generated JSON/Joblib/Parquet artifacts are intentionally excluded from Git, so this document provides a compact durable summary.
+This is the frozen record of the completed FulfillAI model evaluations. Large generated JSON, Joblib, and Parquet artifacts stay out of Git, so the metrics that matter are kept here alongside the assumptions needed to interpret them.
 
 ## 1. Demand forecasting — frozen Phase 8 final test
 
@@ -19,7 +19,7 @@ This file records the completed FulfillAI model evaluations observed in the fina
 **WAPE improvement:** +18.654966 percentage points
 **Relative WAPE improvement:** **21.14%**
 
-The hurdle model wins on the primary business metric (WAPE) and MAE, while the rolling baseline has lower RMSE. That disagreement is worth preserving rather than hiding: large-error sensitivity and aggregate weighted error are measuring different aspects of performance.
+The hurdle model is better on the primary metric (WAPE) and on MAE, while the rolling baseline has lower RMSE. I kept both results because the disagreement is informative: RMSE punishes large individual misses more heavily, while WAPE tracks total absolute error relative to total demand.
 
 ### Occurrence classifier diagnostics
 
@@ -138,11 +138,11 @@ The high recall is operationally useful for a stockout-warning use case where mi
 | Recall | 0.986339 |
 | F1 | 0.975801 |
 
-The near-perfect result should be described with appropriate caution because this is synthetic data. It shows that the generated reorder target is highly predictable from prior inventory/demand state; it is not evidence that a real production reorder system would achieve the same score.
+The near-perfect reorder result needs context. Because the data is synthetic, the future reorder label is strongly tied to prior inventory and demand state. The score shows that the pipeline can recover that generated relationship; it does not imply that a real reorder system would achieve the same accuracy.
 
 ---
 
-## 5. Result interpretation principles
+## 5. How I interpret these results
 
 1. **Do not compare metrics across unrelated tasks as if they measure the same difficulty.**
 2. **PR-AUC must be interpreted relative to target prevalence.**
