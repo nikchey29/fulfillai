@@ -87,13 +87,15 @@ The demand pipeline progresses from naive/rolling baselines through Poisson and 
 
 ```text
 P(demand > 0)
-      ×
-E(units | demand > 0)
       ↓
-expected daily units
+compare with frozen threshold 0.925
+      ↓
+  no → forecast 0
+ yes → positive-demand magnitude model
 ```
 
-The final hurdle threshold was frozen before the one-time test.
+The frozen implementation is therefore a **hard-gated two-stage hurdle forecast**:
+`I[P(demand > 0) >= 0.925] × predicted positive-demand magnitude`. The threshold was selected before the final test and was not retuned afterward.
 
 ### 2. Delivery risk
 
@@ -142,6 +144,30 @@ no post-test model changes
 ```
 
 The binary workflow refuses final test evaluation when the Git working tree is dirty and refuses to re-evaluate if the one-time test artifact already exists. The demand evaluator applies equivalent freeze checks.
+
+
+## Platform / MLOps expansion
+
+The repository also contains an optional production-engineering layer for hands-on practice with **dbt, FastAPI, Docker, MLflow, Redpanda/Kafka, PySpark Structured Streaming, GitHub Actions, Azure Container Apps IaC, and Tableau-ready marts**. These components wrap the frozen model artifacts; they do not change the historical final-test results. See [`docs/platform_engineering.md`](docs/platform_engineering.md).
+
+## Interactive Tableau dashboard
+
+FulfillAI includes a published **Tableau Public executive dashboard** built from the project's BI-ready analytical export.
+
+[**View the live FulfillAI dashboard on Tableau Public**](https://public.tableau.com/app/profile/chaithanya.vemuri/viz/FullfillAI_Supplychain_Intelligence/FulfillAI-ExecutiveOverview)
+
+![FulfillAI Executive Dashboard](docs/assets/tableau/fulfillai_executive_dashboard.png)
+
+The dashboard surfaces:
+- **50,000** total orders
+- **46,120** delivered shipments
+- **9.92%** late-delivery rate
+- **4.34%** delivery-exception rate
+- Warehouse-level order, late-delivery, and exception comparisons
+- Daily order-volume trends
+- Interactive warehouse cross-filtering and custom tooltips
+
+Tableau Public consumes the generated BI export rather than a live production PostgreSQL connection. See [`docs/tableau_dashboard.md`](docs/tableau_dashboard.md) for implementation details.
 
 ## Repository layout
 

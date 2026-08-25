@@ -112,6 +112,30 @@ class LoadedSplit:
 
 
 @dataclass(frozen=True)
+class TrainValidationDataset:
+    """Train/validation-only dataset used before the final test gate."""
+
+    task: MLTaskConfig
+    predictors: tuple[str, ...]
+    metadata: dict
+    train: LoadedSplit
+    validation: LoadedSplit
+
+    def split(
+        self,
+        name: Literal["train", "validation"],
+    ) -> LoadedSplit:
+        """Return a pre-test partition without exposing TEST."""
+        if name == "train":
+            return self.train
+        if name == "validation":
+            return self.validation
+        raise ValueError(
+            "TrainValidationDataset exposes only 'train' and 'validation'."
+        )
+
+
+@dataclass(frozen=True)
 class TaskDataset:
     """
     Complete train/validation/test dataset for one ML task.
@@ -687,7 +711,59 @@ def validate_chronology(
 
 
 # ======================================================================
-# Full task loader
+# Pre-test task loader
+# ======================================================================
+
+
+def validate_train_validation_chronology(
+    dataset: TrainValidationDataset,
+) -> None:
+    """Ensure TRAIN strictly precedes VALIDATION without touching TEST."""
+    column = dataset.task.split_column
+    train_min, train_max = _date_bounds(dataset.train, column)
+    validation_min, validation_max = _date_bounds(dataset.validation, column)
+
+    if not (
+        train_min <= train_max < validation_min <= validation_max
+    ):
+        raise MLDataError(
+            f"{dataset.task.name}: invalid train/validation chronological ordering. "
+            f"train={train_min}..{train_max}, "
+            f"validation={validation_min}..{validation_max}"
+        )
+
+
+def load_train_validation_dataset(
+    task_name: str,
+) -> TrainValidationDataset:
+    """Load only TRAIN and VALIDATION. The TEST Parquet file is not read."""
+    task = get_task_config(task_name)
+    metadata = load_metadata(task)
+    predictors = predictor_columns(task, metadata)
+
+    dataset = TrainValidationDataset(
+        task=task,
+        predictors=predictors,
+        metadata=metadata,
+        train=load_split(
+            task,
+            "train",
+            metadata=metadata,
+            predictors=predictors,
+        ),
+        validation=load_split(
+            task,
+            "validation",
+            metadata=metadata,
+            predictors=predictors,
+        ),
+    )
+    validate_train_validation_chronology(dataset)
+    return dataset
+
+
+# ======================================================================
+# Full task loader — reserved for diagnostics / explicit three-way access
 # ======================================================================
 
 

@@ -1,0 +1,21 @@
+version: 2
+sources:
+  - name: operational
+    schema: public
+    tables:
+      - name: orders
+        columns:
+          - name: order_id
+            tests: [not_null, unique]
+      - name: shipments
+        columns:
+          - name: shipment_id
+            tests: [not_null, unique]
+      - name: warehouses
+        columns:
+          - name: warehouse_id
+            tests: [not_null, unique]
+      - name: order_items
+        columns:
+          - name: order_item_id
+            tests: [not_null, unique]

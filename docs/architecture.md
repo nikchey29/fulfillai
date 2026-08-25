@@ -144,11 +144,13 @@ flowchart LR
     X[Leakage-safe historical features] --> C[Occurrence classifier]
     X --> R[Magnitude regressor trained on positive-demand rows]
     C --> P[P demand > 0]
-    R --> U[Expected units given demand > 0]
-    P --> Z[Multiply]
-    U --> Z
-    Z --> Y[Expected units sold]
+    P --> G{P >= 0.925?}
+    G -->|No| Z[Forecast 0]
+    G -->|Yes| R
+    R --> Y[Positive-demand magnitude forecast]
 ```
+
+The frozen Phase 8 implementation is **hard-gated**, not probability-weighted: the magnitude prediction is emitted only when occurrence probability meets the frozen threshold.
 
 ### Delivery
 

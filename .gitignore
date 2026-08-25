@@ -58,3 +58,22 @@ artifacts/experiments/
 
 # Generated ML artifacts
 artifacts/
+
+# Platform / MLOps generated state
+mlruns/
+mlartifacts/
+dbt/target/
+dbt/logs/
+data/streaming/
+!data/streaming/.gitkeep
+
+# Local dbt configuration and generated artifacts
+dbt/profiles.yml
+dbt/.user.yml
+dbt/logs/
+dbt/target/
+
+# Local development backups
+.phase*_backup_*/
+.phase*_hotfix_backup_*/
+README.md.pre_*

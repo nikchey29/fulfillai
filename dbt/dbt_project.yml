@@ -1,0 +1,15 @@
+name: fulfillai_dbt
+version: 1.0.0
+config-version: 2
+profile: fulfillai
+model-paths: ["models"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+models:
+  fulfillai_dbt:
+    staging:
+      +materialized: view
+      +schema: dbt_staging
+    marts:
+      +materialized: view
+      +schema: dbt_marts

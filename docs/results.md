@@ -37,7 +37,7 @@ The hurdle model wins on the primary business metric (WAPE) and MAE, while the r
 | True negatives | 54,931 |
 | False negatives | 7,413 |
 
-The frozen threshold favors extremely high precision at the cost of recall. The final forecast score is produced by the full hurdle expectation, not by treating the classifier threshold as a standalone business alerting threshold.
+The frozen threshold favors extremely high precision at the cost of recall. The final forecast is **hard-gated**: rows below the 0.925 occurrence threshold receive a zero forecast, while rows above the threshold receive the magnitude model's positive-demand prediction.
 
 ---
 

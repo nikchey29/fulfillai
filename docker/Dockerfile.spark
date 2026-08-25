@@ -1,0 +1,6 @@
+FROM apache/spark:4.0.4-scala2.13-java17-python3-ubuntu
+
+USER root
+RUN python3 -m pip install --no-cache-dir "psycopg[binary]>=3.2,<4"
+
+USER spark

@@ -456,7 +456,12 @@ def final_model_path(group: str, task_name: str, phase: str) -> Path:
 
 
 def final_refit_task(task_name: str, *, validation_phase: str, final_phase: str, group: str) -> dict:
-    """Freeze a validation-selected architecture and refit on TRAIN+VALIDATION."""
+    """Freeze a validation-selected architecture and refit on TRAIN+VALIDATION.
+
+    The source tree must already be clean so the persisted model can be tied to
+    the exact committed implementation used for the final refit.
+    """
+    source_commit = require_clean_git()
     sel_path = selection_path(group, task_name, validation_phase)
     if not sel_path.exists():
         raise BinaryWorkflowError(f"Missing validation selection artifact: {sel_path}")
@@ -507,7 +512,7 @@ def final_refit_task(task_name: str, *, validation_phase: str, final_phase: str,
         "positive_rows": int(y_final.sum()),
         "selection_artifact": str(sel_path),
         "selection_artifact_sha256": sha256_file(sel_path),
-        "source_git_commit": git_commit(),
+        "source_git_commit": source_commit,
         "test_used": False,
     }
     joblib.dump(artifact, path)
@@ -525,6 +530,7 @@ def final_refit_task(task_name: str, *, validation_phase: str, final_phase: str,
         "model_artifact": str(path),
         "model_sha256": sha256_file(path),
         "selection_artifact": str(sel_path),
+        "source_git_commit": source_commit,
         "test_set_used": False,
     }
     write_json(metric_path, payload)

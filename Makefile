@@ -8,7 +8,7 @@ endif
 POSTGRES_USER ?= fulfillai
 POSTGRES_DB ?= fulfillai
 
-.PHONY: help install install-dev verify test compile db-up db-down db-preflight db-load generate validate-data sql-models validate-features build-features clean-python
+.PHONY: help install install-dev install-platform verify platform-preflight test compile db-up db-down db-preflight db-load generate validate-data sql-models validate-features build-features clean-python platform-up platform-down api mlflow-log dbt-build stream-up stream-down stream-producer stream-consumer platform-demo
 
 help:
 	@echo "FulfillAI developer commands"
@@ -24,12 +24,28 @@ help:
 	@echo "  make sql-models       Apply analytical/ML SQL views in order"
 	@echo "  make validate-features Validate SQL feature sources"
 	@echo "  make build-features   Build chronological Parquet feature datasets"
+	@echo "  make install-platform Install optional API/MLOps/streaming/dbt dependencies"
+	@echo "  make platform-preflight Validate platform source without touching data"
+	@echo "  make platform-up      Start API + MLflow + Redpanda services"
+	@echo "  make api              Run FastAPI locally"
+	@echo "  make mlflow-log       Log frozen benchmark metrics to MLflow"
+	@echo "  make dbt-build        Build/test dbt marts against PostgreSQL"
+	@echo "  make stream-up        Start Redpanda + console"
+	@echo "  make stream-producer  Publish synthetic order events to Redpanda"
+	@echo "  make stream-consumer  Run PySpark Structured Streaming consumer"
+	@echo "  make platform-demo    Start FastAPI + MLflow locally via Docker"
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
 
 install-dev:
 	$(PYTHON) -m pip install -r requirements-dev.txt
+
+install-platform:
+	$(PYTHON) -m pip install -r requirements-platform.txt
+
+platform-preflight:
+	$(PYTHON) scripts/platform_preflight.py
 
 compile:
 	$(PYTHON) -m compileall -q src scripts
@@ -74,3 +90,33 @@ build-features:
 clean-python:
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete
+
+platform-up:
+	docker compose --profile platform --profile streaming up -d
+
+platform-down:
+	docker compose --profile platform --profile streaming down
+
+api:
+	$(PYTHON) -m uvicorn src.fulfillai.api.main:app --reload --host 0.0.0.0 --port 8000
+
+mlflow-log:
+	$(PYTHON) -m src.fulfillai.mlops.mlflow_tracking
+
+dbt-build:
+	cd dbt && DBT_PROFILES_DIR=. dbt build
+
+stream-up:
+	docker compose --profile streaming up -d redpanda redpanda-console
+
+stream-down:
+	docker compose --profile streaming stop redpanda redpanda-console
+
+platform-demo:
+	bash scripts/platform_demo.sh
+
+stream-producer:
+	$(PYTHON) -m src.fulfillai.streaming.producer
+
+stream-consumer:
+	bash scripts/run_spark_stream.sh

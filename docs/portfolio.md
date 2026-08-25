@@ -62,7 +62,7 @@ Designed and implemented FulfillAI, an end-to-end e-commerce operations intellig
 
 **Problem:** A single regressor could appear competitive by predicting near-zero values almost everywhere.
 
-**Action:** I separated occurrence probability from positive-demand magnitude and combined them as an expected-value forecast.
+**Action:** I separated occurrence probability from positive-demand magnitude and used a frozen hard gate: below the occurrence threshold the forecast is zero; above it the magnitude model supplies the positive-demand forecast.
 
 **Result:** Final WAPE improved by 21.14% relative to the rolling-28 baseline.
 

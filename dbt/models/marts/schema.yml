@@ -1,0 +1,31 @@
+version: 2
+models:
+- name: fct_fulfillment
+  description: One order joined to its shipment outcome for analytics/BI.
+  columns:
+  - name: order_id
+    tests:
+    - not_null
+    - unique
+    - relationships:
+        arguments:
+          to: '{{ source(''operational'', ''orders'') }}'
+          field: order_id
+    description: Order identifier linking the fulfillment mart to the operational
+      orders source.
+- name: agg_warehouse_daily
+  description: Warehouse-day operational KPI mart for BI dashboards.
+  columns:
+  - name: order_date
+    tests:
+    - not_null
+    description: Calendar date defining the daily aggregation grain.
+  - name: warehouse_id
+    tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: '{{ source(''operational'', ''warehouses'') }}'
+          field: warehouse_id
+    description: Warehouse identifier linking the daily aggregation to the warehouse
+      master.

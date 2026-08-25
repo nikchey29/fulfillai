@@ -25,7 +25,7 @@ TaskType = Literal[
 # ======================================================================
 
 
-PROJECT_ROOT = Path.cwd()
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 FEATURE_ROOT = (
     PROJECT_ROOT

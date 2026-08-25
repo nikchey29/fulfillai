@@ -2,30 +2,86 @@ services:
   postgres:
     image: postgres:17
     container_name: fulfillai-postgres
-
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
     ports:
       - "${POSTGRES_PORT}:5432"
-
     volumes:
       - fulfillai_postgres_data:/var/lib/postgresql/data
       - ./sql/schema/001_core_schema.sql:/docker-entrypoint-initdb.d/001_core_schema.sql:ro
-
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
-        ]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
+  api:
+    profiles: ["platform"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: fulfillai-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    restart: unless-stopped
+
+  mlflow:
+    profiles: ["platform"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+    container_name: fulfillai-mlflow
+    ports:
+      - "5001:5000"
+    volumes:
+      - fulfillai_mlflow:/mlflow
+    restart: unless-stopped
+
+  redpanda:
+    profiles: ["streaming"]
+    image: redpandadata/redpanda:v24.2.18
+    container_name: fulfillai-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp
+      - '1'
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - '0'
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - fulfillai_redpanda:/var/lib/redpanda/data
+    restart: unless-stopped
+
+  redpanda-console:
+    profiles: ["streaming"]
+    image: redpandadata/console:v2.7.2
+    container_name: fulfillai-redpanda-console
+    depends_on:
+      - redpanda
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
     restart: unless-stopped
 
 volumes:
   fulfillai_postgres_data:
+  fulfillai_mlflow:
+  fulfillai_redpanda:

@@ -1,8 +1,8 @@
 # FulfillAI Roadmap
 
-The **core data + ML portfolio scope is complete**. Future work is optional extension work, not required to justify the current project.
+The **core data + ML benchmark is complete and frozen**. The current working phase is a production/platform expansion that adds demonstrable engineering skills without changing historical final-test results.
 
-## Completed core
+## Completed core benchmark
 
 - deterministic synthetic e-commerce fulfillment simulation;
 - comprehensive data validation;
@@ -17,44 +17,40 @@ The **core data + ML portfolio scope is complete**. Future work is optional exte
 - frozen final refits and one-time test evaluation;
 - documented final results.
 
-## Optional extension A — prediction API
+## Platform expansion — source implemented, hands-on verification in progress
 
-Build a small FastAPI service that:
+### Phase 12 — MLOps / serving
+- FastAPI frozen-model serving layer;
+- Docker API container;
+- MLflow frozen-result tracking;
+- machine-readable frozen-result manifest.
 
-- loads frozen model bundles once at startup;
-- validates request schemas;
-- exposes `/predict/demand`, `/predict/delivery`, and `/predict/inventory` endpoints;
-- returns model version / threshold metadata;
-- logs latency and request counts.
+### Phase 13 — analytics engineering
+- dbt PostgreSQL sources;
+- staging models;
+- fulfillment fact mart;
+- warehouse-day KPI mart;
+- dbt schema tests.
 
-## Optional extension B — BI dashboard
+### Phase 14 — streaming
+- Redpanda/Kafka-compatible event broker;
+- order-event producer;
+- PySpark Structured Streaming consumer;
+- watermarking and 5-minute operational windows.
 
-Create a dashboard over PostgreSQL for:
+### Phase 15 — DevOps / cloud
+- GitHub Actions source CI;
+- tagged Docker image build/push to GHCR;
+- Azure Container Apps Bicep deployment template.
 
-- fulfillment KPIs;
-- carrier performance;
-- warehouse throughput;
-- late-delivery risk queues;
-- stockout / reorder alerts;
-- demand forecast vs actual trends.
+### Phase 16 — BI
+- Tableau-ready dbt marts;
+- one-page operational dashboard to be built/published interactively.
 
-## Optional extension C — event streaming
+## Resume rule
 
-Use Kafka/Redpanda for `order_events` and `inventory_movements`, with consumers that update operational state and feature aggregates.
+A technology becomes a resume skill only after its verification gate has been run successfully. See `docs/platform_engineering.md`.
 
-## Optional extension D — MLOps
+## Future scientific extension
 
-Add:
-
-- experiment registry;
-- CI source tests;
-- Dockerized model service;
-- scheduled retraining;
-- model/data drift monitoring;
-- prediction logging;
-- calibration monitoring;
-- threshold changes controlled by validation rather than production test feedback.
-
-## Optional extension E — real-data adaptation
-
-The most valuable next scientific step is replacing synthetic data with a public or enterprise-like fulfillment dataset and rerunning the same leakage-safe evaluation structure.
+The most valuable later scientific step is replacing synthetic data with a public or enterprise-like fulfillment dataset and rerunning the leakage-safe evaluation structure as a new benchmark version.

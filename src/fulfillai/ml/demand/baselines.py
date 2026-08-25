@@ -29,7 +29,7 @@ from ..config import (
 )
 from ..data import (
     LoadedSplit,
-    load_task_dataset,
+    load_train_validation_dataset,
 )
 from ..metrics import (
     forecasting_metrics,
@@ -556,7 +556,7 @@ def main() -> None:
         "=" * 88
     )
 
-    dataset = load_task_dataset(
+    dataset = load_train_validation_dataset(
         TASK_NAME
     )
 

@@ -137,7 +137,7 @@ The final architecture explicitly separates two questions:
 1. **Occurrence:** will demand be positive?
 2. **Magnitude:** if demand is positive, how many units are expected?
 
-The final prediction is the combination of the two components. Threshold calibration and temporal robustness were performed before the one-time test.
+The final prediction is a **hard-gated combination** of the two components: if the occurrence probability is below the frozen threshold, the forecast is zero; otherwise the positive-demand magnitude model supplies the forecast. Threshold calibration and temporal robustness were performed before the one-time test.
 
 ## 8. Delivery V1 → V2 redesign
 

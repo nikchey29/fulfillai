@@ -35,7 +35,7 @@ from ..config import (
     MODEL_ROOT,
     ensure_artifact_directories,
 )
-from ..data import load_task_dataset
+from ..data import load_train_validation_dataset
 from ..metrics import forecasting_metrics
 from ..preprocessing import (
     build_preprocessor,
@@ -327,7 +327,7 @@ def main() -> None:
         "=" * 88
     )
 
-    dataset = load_task_dataset(
+    dataset = load_train_validation_dataset(
         TASK_NAME
     )
 

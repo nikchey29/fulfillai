@@ -1,0 +1,75 @@
+{
+  "artifact_version": 1,
+  "project": "FulfillAI",
+  "benchmark": "v1.0.0 frozen evaluation record",
+  "data_scope": "deterministic relational synthetic fulfillment data",
+  "post_test_tuning_allowed": false,
+  "demand_forecasting": {
+    "architecture": "hard-gated two-stage hurdle forecast",
+    "occurrence_threshold": 0.925,
+    "test_rows": 63501,
+    "test_window": ["2026-06-01", "2026-07-31"],
+    "hurdle": {
+      "mae": 0.266097,
+      "rmse": 0.933770,
+      "wape_pct": 69.588383,
+      "smape_pct": 24.146230
+    },
+    "rolling_28": {
+      "mae": 0.337432,
+      "rmse": 0.836723,
+      "wape_pct": 88.243349,
+      "smape_pct": 150.477220
+    },
+    "relative_wape_improvement_pct": 21.14
+  },
+  "delivery_v2": {
+    "late_delivery": {
+      "model": "logistic_balanced",
+      "threshold": 0.63,
+      "test_rows": 7625,
+      "positive_rows": 705,
+      "pr_auc": 0.303115,
+      "roc_auc": 0.755719,
+      "precision": 0.255760,
+      "recall": 0.472340,
+      "f1": 0.331839,
+      "f2": 0.403930,
+      "lift_at_1pct": 6.742194
+    },
+    "delivery_exception": {
+      "model": "logistic_balanced",
+      "threshold": 0.69,
+      "test_rows": 7947,
+      "positive_rows": 322,
+      "pr_auc": 0.167229,
+      "roc_auc": 0.796958,
+      "precision": 0.163243,
+      "recall": 0.468944,
+      "f1": 0.242181,
+      "f2": 0.341166,
+      "lift_at_1pct": 8.021040
+    }
+  },
+  "inventory": {
+    "stockout_risk": {
+      "model": "random_forest",
+      "threshold": 0.77,
+      "pr_auc": 0.359567,
+      "roc_auc": 0.992886,
+      "precision": 0.321289,
+      "recall": 0.832911,
+      "f1": 0.463707
+    },
+    "reorder_breach_risk": {
+      "model": "random_forest",
+      "threshold": 0.50,
+      "pr_auc": 0.998317,
+      "roc_auc": 0.999642,
+      "precision": 0.965487,
+      "recall": 0.986339,
+      "f1": 0.975801,
+      "caution": "Near-perfect synthetic benchmark result; not a real-world accuracy claim."
+    }
+  }
+}

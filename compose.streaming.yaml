@@ -1,0 +1,77 @@
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.2
+    container_name: fulfillai-redpanda
+    profiles: ["streaming"]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+    ports:
+      - "19092:19092"
+      - "19644:9644"
+    volumes:
+      - fulfillai_redpanda:/var/lib/redpanda/data
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v3.10.0
+    container_name: fulfillai-redpanda-console
+    profiles: ["streaming"]
+    depends_on:
+      - redpanda
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8085:8080"
+
+  phase14-spark:
+    user: "0:0"
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.spark
+    image: fulfillai-phase14-spark:4.0.4
+    container_name: fulfillai-phase14-spark
+    profiles: ["streaming"]
+    working_dir: /opt/fulfillai
+    environment:
+      HOME: /tmp
+      PYSPARK_PYTHON: python3
+      KAFKA_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC: fulfillment.events
+      STREAMING_ARTIFACT_ROOT: /opt/fulfillai/artifacts/streaming
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_USER: fulfillai
+      PG_DB: fulfillai
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - .:/opt/fulfillai
+      - fulfillai_spark_ivy:/tmp/.ivy2
+    depends_on:
+      - redpanda
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+
+volumes:
+  fulfillai_redpanda:
+  fulfillai_spark_ivy:

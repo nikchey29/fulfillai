@@ -1,5 +1,5 @@
 """Phase 10.4 — final inventory refit on TRAIN + VALIDATION."""
-from src.fulfillai.ml.modeling.common_binary import final_refit_task
+from src.fulfillai.ml.modeling.common_binary import final_refit_task, require_clean_git
 
 TASKS = ("stockout_risk", "reorder_breach_risk")
 VALIDATION_PHASE = "10.1-10.3"
@@ -8,7 +8,9 @@ GROUP = "inventory"
 
 
 def main() -> None:
+    commit = require_clean_git()
     print("FULFILLAI PHASE 10.4 — INVENTORY FINAL REFIT")
+    print(f"SOURCE COMMIT: {commit}")
     print("TRAIN + VALIDATION ONLY | TEST LOCKED 🔒")
     for task_name in TASKS:
         result = final_refit_task(

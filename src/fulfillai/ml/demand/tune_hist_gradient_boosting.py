@@ -40,7 +40,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
 from ..config import METRIC_ROOT, MODEL_ROOT, ensure_artifact_directories
-from ..data import load_task_dataset
+from ..data import load_train_validation_dataset
 from ..metrics import forecasting_metrics
 from .train_hist_gradient_boosting import (
     EXPECTED_PHASE_8_8_PREDICTORS,
@@ -423,7 +423,7 @@ def main() -> None:
     _validate_candidate_definitions()
     _validate_phase_8_8_contract()
 
-    dataset = load_task_dataset(TASK_NAME)
+    dataset = load_train_validation_dataset(TASK_NAME)
     train = dataset.train
     validation = dataset.validation
 

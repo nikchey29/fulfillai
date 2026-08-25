@@ -42,7 +42,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
 from ..config import METRIC_ROOT, MODEL_ROOT, ensure_artifact_directories
-from ..data import load_task_dataset
+from ..data import load_train_validation_dataset
 from ..metrics import forecasting_metrics
 
 
@@ -719,7 +719,7 @@ def main() -> None:
     print("FulfillAI Phase 8.8 demand model: Leakage-Safe HistGradientBoosting")
     print("=" * 88)
 
-    dataset = load_task_dataset(TASK_NAME)
+    dataset = load_train_validation_dataset(TASK_NAME)
 
     train = dataset.train
     validation = dataset.validation
