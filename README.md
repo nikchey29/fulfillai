@@ -1,5 +1,25 @@
 # FulfillAI
 
+<!-- recruiter-summary:start -->
+[![source-ci](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml)
+[![api-container](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml)
+
+**Production-style e-commerce data + ML platform** spanning PostgreSQL, dbt, Parquet feature pipelines, forecasting and operational-risk models, MLflow, FastAPI, PySpark Structured Streaming, Docker, and GitHub Actions.
+
+**5,000 customers · 300 products · 12 categories · 5 warehouses · 50,000 orders**
+
+**Frozen final-test results**
+- Demand forecasting: **69.588% WAPE**, **21.14% relative improvement** vs. a rolling-28 baseline.
+- Late-delivery risk: **0.303115 PR-AUC** (**3.28×** the test-prevalence baseline).
+- Delivery-exception risk: **0.167229 PR-AUC** (**4.13×** the test-prevalence baseline).
+- 7-day stockout risk: **0.359567 PR-AUC**, **0.992886 ROC-AUC**, **0.832911 recall**.
+- 7-day reorder-breach risk: **0.998317 PR-AUC**, **0.975801 F1**; the synthetic-data caveat is documented in the results section below.
+
+**Leakage-safe evaluation:** train **Aug 2025–Apr 2026** → validation **May 2026** → one-time final test **Jun–Jul 2026**. Final-test access is guarded by repository-state and evaluator checks.
+
+<!-- recruiter-summary:end -->
+
+
 **A supply-chain data and machine-learning system built around one idea: predictions are only useful when the data path behind them is trustworthy.**
 
 I started FulfillAI because I wanted to work through the parts of an ML system that usually get skipped in small projects. Instead of beginning with a clean dataset, I began with the operational side: customers, products, warehouses, inventory, orders, shipments, and events. From there I built the path into PostgreSQL, analytical models, leakage-safe feature sets, forecasting and risk models, streaming, serving, and a small BI layer.
