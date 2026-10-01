@@ -5,6 +5,7 @@ set -euo pipefail
 
 REGION="${GCP_REGION:-europe-west3}"
 CLUSTER_NAME="${GKE_CLUSTER_NAME:-fulfillai-gke}"
+ENVIRONMENT="${ENVIRONMENT:-dev}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 REPOSITORY="fulfillai"
 IMAGE_REPOSITORY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPOSITORY}/fulfillai-api"
@@ -27,6 +28,7 @@ cat >"${TF_DIR}/terraform.tfvars" <<EOF
 project_id   = "$GCP_PROJECT_ID"
 region       = "$REGION"
 cluster_name = "$CLUSTER_NAME"
+environment  = "$ENVIRONMENT"
 EOF
 
 echo "== Terraform =="
