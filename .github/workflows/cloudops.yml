@@ -46,4 +46,13 @@ jobs:
           context: .
           file: docker/Dockerfile.api
           push: false
+          load: true
           tags: fulfillai-api:${{ github.sha }}
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: fulfillai-api:${{ github.sha }}
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
