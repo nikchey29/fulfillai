@@ -13,3 +13,12 @@ output "artifact_repository" {
 output "image_repository" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.fulfillai.repository_id}/fulfillai-api"
 }
+
+
+output "workload_service_account" {
+  value = google_service_account.fulfillai_api.email
+}
+
+output "database_secret_name" {
+  value = google_secret_manager_secret.database_url.secret_id
+}
