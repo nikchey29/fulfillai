@@ -50,6 +50,10 @@ resource "google_container_cluster" "fulfillai" {
 
   enable_autopilot = true
   networking_mode  = "VPC_NATIVE"
+
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
   network           = google_compute_network.fulfillai.id
   subnetwork        = google_compute_subnetwork.gke.id
 
@@ -60,4 +64,34 @@ resource "google_container_cluster" "fulfillai" {
 
   deletion_protection = false
   depends_on          = [google_project_service.required]
+}
+
+
+resource "google_service_account" "fulfillai_api" {
+  account_id   = "fulfillai-api"
+  display_name = "FulfillAI API workload identity"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_secret_manager_secret" "database_url" {
+  secret_id = "fulfillai-database-url"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_secret_manager_secret_iam_member" "api_secret_accessor" {
+  secret_id = google_secret_manager_secret.database_url.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.fulfillai_api.email}"
+}
+
+resource "google_service_account_iam_member" "workload_identity" {
+  service_account_id = google_service_account.fulfillai_api.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[fulfillai/fulfillai]"
 }
