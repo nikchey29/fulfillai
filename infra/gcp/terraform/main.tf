@@ -41,6 +41,10 @@ resource "google_artifact_registry_repository" "fulfillai" {
   repository_id = "fulfillai"
   description   = "FulfillAI container images"
   format        = "DOCKER"
+  labels = {
+    application = "fulfillai"
+    environment = var.environment
+  }
   depends_on    = [google_project_service.required]
 }
 
@@ -62,6 +66,11 @@ resource "google_container_cluster" "fulfillai" {
     services_secondary_range_name = "services"
   }
 
+  resource_labels = {
+    application = "fulfillai"
+    environment = var.environment
+  }
+
   deletion_protection = false
   depends_on          = [google_project_service.required]
 }
@@ -76,6 +85,10 @@ resource "google_service_account" "fulfillai_api" {
 
 resource "google_secret_manager_secret" "database_url" {
   secret_id = "fulfillai-database-url"
+  labels = {
+    application = "fulfillai"
+    environment = var.environment
+  }
 
   replication {
     auto {}
