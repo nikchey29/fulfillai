@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fulfillai
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikchey29/fulfillai.git
+    targetRevision: feat/cloudops-platform
+    path: deploy/helm/fulfillai
+    helm:
+      values: |
+        image:
+          repository: europe-west3-docker.pkg.dev/YOUR_GCP_PROJECT_ID/fulfillai/fulfillai-api
+          tag: latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fulfillai
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

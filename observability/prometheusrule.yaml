@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fulfillai-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: fulfillai
+      rules:
+        - alert: FulfillAIHighPodRestartRate
+          expr: increase(kube_pod_container_status_restarts_total{namespace="fulfillai"}[15m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: FulfillAI pod is restarting repeatedly

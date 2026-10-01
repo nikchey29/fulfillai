@@ -13,6 +13,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -129,6 +130,12 @@ app = FastAPI(
     ),
 )
 
+Instrumentator().instrument(app).expose(
+    app,
+    endpoint="/metrics",
+    include_in_schema=False,
+)
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -144,7 +151,10 @@ def results() -> dict[str, Any]:
 def models() -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for task, path in ARTIFACTS.items():
-        item: dict[str, Any] = {"artifact": str(path.relative_to(PROJECT_ROOT)), "available": path.exists()}
+        item: dict[str, Any] = {
+            "artifact": str(path.relative_to(PROJECT_ROOT)),
+            "available": path.exists(),
+        }
         if path.exists():
             artifact = load_artifact(task)
             feature_key = "safe_predictors" if task == "demand_forecasting" else "feature_columns"

@@ -1,0 +1,31 @@
+replicaCount: 2
+
+image:
+  repository: europe-west3-docker.pkg.dev/YOUR_GCP_PROJECT_ID/fulfillai/fulfillai-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+healthPath: /health
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+env:
+  APP_ENV: production
+  LOG_LEVEL: INFO

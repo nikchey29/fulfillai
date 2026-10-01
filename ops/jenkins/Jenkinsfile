@@ -1,0 +1,26 @@
+pipeline {
+  agent any
+
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Verify') {
+      steps {
+        sh '''
+          python -m pip install -r requirements-dev.txt
+          python -m compileall -q src scripts
+          python scripts/verify_source.py
+          python -m pytest -q
+        '''
+      }
+    }
+
+    stage('Container Build') {
+      steps {
+        sh 'docker build -f docker/Dockerfile.api -t fulfillai-api:$BUILD_NUMBER .'
+      }
+    }
+  }
+}

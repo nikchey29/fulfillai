@@ -1,0 +1,31 @@
+---
+- name: Bootstrap CloudOps Linux host
+  hosts: cloudops
+  become: true
+  tasks:
+    - name: Install base packages on Debian-family systems
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+          - git
+          - jq
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Debian"
+
+    - name: Install base packages on RedHat-family systems
+      ansible.builtin.dnf:
+        name:
+          - curl
+          - ca-certificates
+          - git
+          - jq
+        state: present
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: Create FulfillAI service user
+      ansible.builtin.user:
+        name: fulfillai
+        system: true
+        create_home: false
