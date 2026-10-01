@@ -29,3 +29,7 @@ autoscaling:
 env:
   APP_ENV: production
   LOG_LEVEL: INFO
+
+
+serviceAccount:
+  gcpServiceAccount: ""
