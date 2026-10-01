@@ -1,0 +1,8 @@
+services:
+  target:
+    image: ubuntu:24.04
+    container_name: fulfillai-ansible-target
+    command:
+      - bash
+      - -lc
+      - apt-get update && apt-get install -y python3 curl ca-certificates git jq && sleep infinity
