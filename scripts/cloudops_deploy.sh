@@ -57,7 +57,8 @@ helm upgrade --install fulfillai deploy/helm/fulfillai \
   --namespace fulfillai \
   --create-namespace \
   --set image.repository="$IMAGE_REPOSITORY" \
-  --set image.tag="$IMAGE_TAG"
+  --set image.tag="$IMAGE_TAG" \
+  --set serviceAccount.gcpServiceAccount="fulfillai-api@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
 
 kubectl rollout status deployment/fulfillai -n fulfillai --timeout=5m
 kubectl get pods,svc,hpa -n fulfillai
