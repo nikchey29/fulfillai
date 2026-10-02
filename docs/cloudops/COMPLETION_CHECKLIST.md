@@ -44,9 +44,9 @@
 - [ ] RBAC objects verified
 - [ ] NetworkPolicy verified
 - [x] readiness/liveness probes verified
-- [ ] guarded bad-release drill executed
-- [ ] rollback succeeds
-- [ ] INC-002 incident template completed
+- [x] guarded bad-release drill executed
+- [x] rollback succeeds
+- [x] INC-002 incident template completed
 
 ## Secondary JD tools
 
