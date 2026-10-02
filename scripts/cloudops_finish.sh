@@ -5,6 +5,7 @@ GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)
 : "${GCP_PROJECT_ID:?No GCP project is set. Run: gcloud config set project PROJECT_ID}"
 
 REGION="${GCP_REGION:-europe-west3}"
+IMAGE_TAG="${IMAGE_TAG:-a12a4ab9}"
 IMAGE_REPOSITORY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/fulfillai/fulfillai-api"
 
 echo "== Prometheus / Grafana =="
@@ -26,11 +27,12 @@ kubectl get pods -n monitoring
 kubectl get servicemonitor,prometheusrule -n monitoring
 
 echo "== Resolve current immutable image digest =="
-IMAGE_DIGEST="$(gcloud artifacts docker images describe "${IMAGE_REPOSITORY}:latest" --format='value(image_summary.digest)')"
+IMAGE_DIGEST="$(gcloud artifacts docker images describe "${IMAGE_REPOSITORY}:${IMAGE_TAG}" --format='value(image_summary.digest)')"
 if [[ -z "$IMAGE_DIGEST" ]]; then
   echo "Could not resolve current image digest from Artifact Registry."
   exit 1
 fi
+echo "Using image tag: $IMAGE_TAG"
 echo "Using digest: $IMAGE_DIGEST"
 
 echo "== ArgoCD =="
