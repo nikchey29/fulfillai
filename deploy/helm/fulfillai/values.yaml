@@ -3,6 +3,7 @@ replicaCount: 2
 image:
   repository: europe-west3-docker.pkg.dev/YOUR_GCP_PROJECT_ID/fulfillai/fulfillai-api
   tag: latest
+  digest: ""
   pullPolicy: IfNotPresent
 
 service:
