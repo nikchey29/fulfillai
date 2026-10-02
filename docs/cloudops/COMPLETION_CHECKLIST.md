@@ -30,13 +30,13 @@
 
 ## Observability / GitOps
 
-- [ ] kube-prometheus-stack installed
+- [x] kube-prometheus-stack installed
 - [ ] ServiceMonitor discovered
 - [ ] Prometheus target healthy
 - [ ] Grafana dashboard inspected
 - [ ] alert rule loaded
-- [ ] ArgoCD installed
-- [ ] FulfillAI ArgoCD Application synced
+- [x] ArgoCD installed
+- [x] FulfillAI ArgoCD Application synced
 - [ ] GitOps self-heal observed
 
 ## Reliability / security
