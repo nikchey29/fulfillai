@@ -51,7 +51,7 @@
 ## Secondary JD tools
 
 - [x] Jenkins pipeline executed
-- [ ] Ansible playbook executed against a Linux host
+- [x] Ansible playbook executed against a Linux host
 - [ ] OpenShift workload + Route verified
 - [ ] centralized logging exercise completed (ELK or Datadog)
 
