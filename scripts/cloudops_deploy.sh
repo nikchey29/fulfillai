@@ -55,7 +55,7 @@ echo "== Artifact Registry authentication =="
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
 echo "== Build and push API image =="
-docker build -f docker/Dockerfile.api -t "${IMAGE_REPOSITORY}:${IMAGE_TAG}" .
+docker build --platform linux/amd64 -f docker/Dockerfile.api -t "${IMAGE_REPOSITORY}:${IMAGE_TAG}" .
 docker tag "${IMAGE_REPOSITORY}:${IMAGE_TAG}" "${IMAGE_REPOSITORY}:latest"
 docker push "${IMAGE_REPOSITORY}:${IMAGE_TAG}"
 docker push "${IMAGE_REPOSITORY}:latest"
