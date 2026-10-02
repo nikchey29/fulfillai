@@ -16,6 +16,12 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
+  echo "gke-gcloud-auth-plugin is required before kubectl can authenticate to GKE."
+  echo "Install it with: gcloud components install gke-gcloud-auth-plugin"
+  exit 1
+fi
+
 if [[ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -n 1)" ]]; then
   echo "No active gcloud account. Run: gcloud auth login"
   exit 1
