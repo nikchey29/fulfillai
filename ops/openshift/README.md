@@ -27,6 +27,6 @@ Log in to an OpenShift cluster (for example, a Red Hat Developer Sandbox) using 
 bash scripts/cloudops_openshift.sh
 ```
 
-The script creates/uses the `fulfillai-dev` project, builds the image inside OpenShift, deploys it, creates a TLS Route, waits for rollout, and verifies `/health`.
+The script reuses your current OpenShift project when one is already assigned (as in Developer Sandbox); otherwise it creates/uses `fulfillai-dev`. It builds the image inside OpenShift, deploys it, creates a TLS Route, waits for rollout, and verifies `/health`.
 
 Record a successful Route URL and health response before describing OpenShift as completed hands-on deployment.
