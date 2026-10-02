@@ -1,7 +1,7 @@
 ---
 - name: Bootstrap CloudOps Linux host
   hosts: cloudops
-  become: true
+  become: false
   tasks:
     - name: Install base packages on Debian-family systems
       ansible.builtin.apt:
