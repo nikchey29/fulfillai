@@ -1,0 +1,44 @@
+# GKE Autopilot-compatible kube-prometheus-stack values.
+# Autopilot owns kube-system and rejects hostPath/hostPID node-exporter workloads.
+# We keep Prometheus, Grafana, kube-state-metrics and application ServiceMonitors.
+
+nodeExporter:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+coreDns:
+  enabled: false
+
+kubelet:
+  enabled: false
+
+defaultRules:
+  create: false
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: true
+    serviceMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: true
+    ruleNamespaceSelector: {}
+
+grafana:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true
