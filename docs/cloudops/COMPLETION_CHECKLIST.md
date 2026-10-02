@@ -15,17 +15,18 @@
 
 ## Live GCP/GKE evidence
 
-- [ ] GCP project selected with billing enabled
-- [ ] Terraform apply succeeds
-- [ ] VPC/subnet created
-- [ ] Artifact Registry created
-- [ ] GKE Autopilot cluster created
-- [ ] API image pushed to Artifact Registry
-- [ ] Helm release installed in GKE
-- [ ] pods ready
+- [x] GCP project selected with billing enabled
+- [x] Terraform apply succeeds
+- [x] VPC/subnet created
+- [x] Artifact Registry created
+- [x] GKE Autopilot cluster created
+- [x] API image pushed to Artifact Registry
+- [x] Helm release installed in GKE
+- [x] pods ready
+- [x] Immutable digest-pinned rollout verified
 - [ ] HPA visible
-- [ ] /health returns 200
-- [ ] /metrics returns Prometheus metrics
+- [x] /health returns 200
+- [x] /metrics returns Prometheus metrics
 
 ## Observability / GitOps
 
@@ -42,7 +43,7 @@
 
 - [ ] RBAC objects verified
 - [ ] NetworkPolicy verified
-- [ ] readiness/liveness probes verified
+- [x] readiness/liveness probes verified
 - [ ] guarded bad-release drill executed
 - [ ] rollback succeeds
 - [ ] INC-002 incident template completed
