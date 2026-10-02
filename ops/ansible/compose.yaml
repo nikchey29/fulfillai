@@ -6,3 +6,9 @@ services:
       - bash
       - -lc
       - apt-get update && apt-get install -y python3 && sleep infinity
+    healthcheck:
+      test: ["CMD", "python3", "--version"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
