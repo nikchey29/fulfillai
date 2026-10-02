@@ -1,16 +1,32 @@
 # OpenShift Completion Exercise
 
-Use the same container image and Helm chart in a Red Hat OpenShift Developer Sandbox.
+This exercise deploys FulfillAI using native OpenShift resources instead of reusing the private GCP image.
 
-Typical flow:
+## What it uses
+
+- OpenShift ImageStream
+- OpenShift BuildConfig
+- Docker strategy build from the public FulfillAI GitHub branch
+- Kubernetes Deployment + Service generated from the ImageStream
+- readiness and liveness probes
+- OpenShift edge-terminated Route
+
+## Prerequisites
+
+Install the OpenShift CLI on macOS:
 
 ```bash
-oc new-project fulfillai-dev
-
-helm upgrade --install fulfillai ../../deploy/helm/fulfillai   --namespace fulfillai-dev   --set image.repository=YOUR_IMAGE_REPOSITORY   --set image.tag=YOUR_IMAGE_TAG
-
-oc apply -f route.yaml -n fulfillai-dev
-oc get pods,svc,route -n fulfillai-dev
+brew install openshift-cli
 ```
 
-Record a successful Route URL and health request before describing OpenShift as completed hands-on deployment.
+Log in to an OpenShift cluster (for example, a Red Hat Developer Sandbox) using the `oc login ...` command supplied by that cluster.
+
+## Run
+
+```bash
+bash scripts/cloudops_openshift.sh
+```
+
+The script creates/uses the `fulfillai-dev` project, builds the image inside OpenShift, deploys it, creates a TLS Route, waits for rollout, and verifies `/health`.
+
+Record a successful Route URL and health response before describing OpenShift as completed hands-on deployment.
