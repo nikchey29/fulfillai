@@ -20,6 +20,44 @@
 <!-- recruiter-summary:end -->
 
 
+## CloudOps / DevOps extension
+
+FulfillAI now also includes a **verified cloud-native operations path** built around the API service.
+
+**Verified hands-on deployment path**
+
+```text
+GitHub / GitHub Actions
+        ↓
+Docker image
+        ↓
+Google Artifact Registry
+        ↓
+Terraform → GCP VPC / subnet / GKE Autopilot
+        ↓
+Kubernetes + Helm
+        ↓
+ArgoCD GitOps
+        ↓
+Prometheus / Grafana
+        ↓
+incident diagnosis + rollback
+```
+
+Additional executed exercises:
+- **Jenkins:** successful FulfillAI CI pipeline run.
+- **Ansible:** Linux host configuration with a second-run `changed=0` idempotency check.
+- **ELK:** structured FulfillAI log ingested through Logstash into Elasticsearch and inspected through the local stack.
+- **OpenShift:** native ImageStream / BuildConfig build, Deployment, Service, TLS Route, and live `/health` verification.
+- **Reliability:** readiness/liveness probes, immutable image-digest rollout, deliberate bad-release exercise, recovery, and documented incident notes.
+- **GitOps:** ArgoCD application reached Synced/Healthy and automatic self-healing was observed after intentional configuration drift.
+
+The Kubernetes/Helm manifests also contain HPA, RBAC, NetworkPolicy, ServiceMonitor and alert-rule definitions. Their live verification status is tracked separately in [`docs/cloudops/COMPLETION_CHECKLIST.md`](docs/cloudops/COMPLETION_CHECKLIST.md), so repository claims stay evidence-based.
+
+See [`docs/cloudops/README.md`](docs/cloudops/README.md) and [`docs/cloudops/RESUME_EVIDENCE.md`](docs/cloudops/RESUME_EVIDENCE.md) for the implementation and evidence boundary.
+
+
+
 **A supply-chain data and machine-learning system built around one idea: predictions are only useful when the data path behind them is trustworthy.**
 
 I started FulfillAI because I wanted to work through the parts of an ML system that usually get skipped in small projects. Instead of beginning with a clean dataset, I began with the operational side: customers, products, warehouses, inventory, orders, shipments, and events. From there I built the path into PostgreSQL, analytical models, leakage-safe feature sets, forecasting and risk models, streaming, serving, and a small BI layer.
@@ -44,6 +82,9 @@ FulfillAI currently includes:
 - a PostgreSQL streaming sink with restart/checkpoint validation;
 - Docker Compose environments for the platform pieces;
 - GitHub Actions for source checks and container builds;
+- Terraform-provisioned GCP/GKE deployment with Helm and ArgoCD;
+- Prometheus/Grafana observability plus Jenkins, Ansible, ELK, and OpenShift hands-on exercises;
+- documented GitOps self-healing and bad-release rollback drills;
 - a published Tableau Public operations dashboard;
 - Azure Container Apps infrastructure-as-code as an undeployed extension.
 
@@ -195,9 +236,11 @@ PostgreSQL sink
 
 The verification scripts run the stream across multiple rounds with the same checkpoint so restart/resume behavior is part of the test, not an assumption.
 
-### Cloud
+### Cloud and operations
 
-`infra/azure/` contains a Bicep template for Azure Container Apps. It is included as infrastructure work, but I do not describe the Azure path as deployed because I have not treated an unverified template as a deployment.
+`infra/gcp/terraform/`, `deploy/helm/`, `deploy/argocd/`, `observability/`, `ops/`, and `scripts/cloudops_*.sh` contain the executed CloudOps extension. The verified path covers Terraform-provisioned GCP infrastructure, GKE Autopilot, Artifact Registry, Helm deployment, ArgoCD GitOps/self-heal, Prometheus/Grafana installation, Jenkins CI, Ansible idempotency, ELK log ingestion, OpenShift deployment, and a deliberate bad-release/rollback exercise.
+
+`infra/azure/` still contains a Bicep template for Azure Container Apps. I do **not** describe the Azure path as deployed because it remains an undeployed infrastructure-as-code extension.
 
 ## Tableau dashboard
 
@@ -326,7 +369,7 @@ Before rerunning completed experiments, read [`docs/repository_guide.md`](docs/r
 
 ## Technology
 
-Python 3.11 · PostgreSQL 17 · SQL · dbt · Pandas · NumPy · scikit-learn · PyArrow · Psycopg · FastAPI · MLflow · Docker Compose · Redpanda · PySpark Structured Streaming · Tableau · GitHub Actions · Bicep
+Python 3.11 · PostgreSQL 17 · SQL · dbt · Pandas · NumPy · scikit-learn · PyArrow · Psycopg · FastAPI · MLflow · Docker / Docker Compose · Redpanda · PySpark Structured Streaming · GitHub Actions · Jenkins · Terraform · GCP · GKE · Kubernetes · Helm · ArgoCD · Prometheus · Grafana · Ansible · ELK · OpenShift · Tableau · Bicep
 
 ---
 
