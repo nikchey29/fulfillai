@@ -37,7 +37,7 @@
 - [ ] alert rule loaded
 - [x] ArgoCD installed
 - [x] FulfillAI ArgoCD Application synced
-- [ ] GitOps self-heal observed
+- [x] GitOps self-heal observed
 
 ## Reliability / security
 
