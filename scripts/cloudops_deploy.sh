@@ -60,12 +60,21 @@ docker tag "${IMAGE_REPOSITORY}:${IMAGE_TAG}" "${IMAGE_REPOSITORY}:latest"
 docker push "${IMAGE_REPOSITORY}:${IMAGE_TAG}"
 docker push "${IMAGE_REPOSITORY}:latest"
 
+echo "== Resolve immutable image digest =="
+IMAGE_DIGEST="$(gcloud artifacts docker images describe "${IMAGE_REPOSITORY}:${IMAGE_TAG}" --format='value(image_summary.digest)')"
+if [[ -z "$IMAGE_DIGEST" ]]; then
+  echo "Could not resolve Artifact Registry digest for ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+  exit 1
+fi
+echo "Resolved digest: $IMAGE_DIGEST"
+
 echo "== Helm deployment =="
 helm upgrade --install fulfillai deploy/helm/fulfillai \
   --namespace fulfillai \
   --create-namespace \
   --set image.repository="$IMAGE_REPOSITORY" \
   --set image.tag="$IMAGE_TAG" \
+  --set image.digest="$IMAGE_DIGEST" \
   --set serviceAccount.gcpServiceAccount="fulfillai-api@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
 
 kubectl rollout status deployment/fulfillai -n fulfillai --timeout=5m
@@ -88,5 +97,6 @@ curl --fail --silent http://127.0.0.1:18000/metrics | head -n 10
 
 echo
 echo "Deployment verified."
-echo "Image: ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+echo "Image tag: ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+echo "Image digest: ${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
 echo "Next: install monitoring and ArgoCD using docs/cloudops/README.md."
