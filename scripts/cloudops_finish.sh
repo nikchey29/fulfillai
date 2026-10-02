@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${GCP_PROJECT_ID:?Set GCP_PROJECT_ID before running this script.}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+: "${GCP_PROJECT_ID:?No GCP project is set. Run: gcloud config set project PROJECT_ID}"
 
 REGION="${GCP_REGION:-europe-west3}"
 IMAGE_REPOSITORY="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/fulfillai/fulfillai-api"
