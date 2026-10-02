@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT="${OPENSHIFT_PROJECT:-fulfillai-dev}"
+CURRENT_PROJECT="$(oc project -q 2>/dev/null || true)"
+PROJECT="${OPENSHIFT_PROJECT:-${CURRENT_PROJECT:-fulfillai-dev}}"
 
 if ! command -v oc >/dev/null 2>&1; then
   echo "OpenShift CLI 'oc' is required. On macOS: brew install openshift-cli"
@@ -15,7 +16,11 @@ if ! oc whoami >/dev/null 2>&1; then
 fi
 
 echo "== Project =="
-oc new-project "$PROJECT" >/dev/null 2>&1 || oc project "$PROJECT"
+if oc get namespace "$PROJECT" >/dev/null 2>&1; then
+  oc project "$PROJECT"
+else
+  oc new-project "$PROJECT"
+fi
 
 echo "== Native OpenShift build =="
 oc apply -f ops/openshift/buildconfig.yaml
