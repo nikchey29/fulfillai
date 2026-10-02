@@ -1,6 +1,6 @@
 # FulfillAI CloudOps Extension
 
-This branch extends the existing FulfillAI platform with a GCP/GKE deployment path for cloud, DevOps, observability, security, and SRE practice.
+FulfillAI includes a GCP/GKE CloudOps extension for cloud, DevOps, observability, security, and SRE practice.
 
 ## Architecture
 
