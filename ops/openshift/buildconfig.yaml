@@ -1,0 +1,25 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: fulfillai-api
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: fulfillai-api
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/nikchey29/fulfillai.git
+      ref: feat/cloudops-platform
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/Dockerfile.api
+  output:
+    to:
+      kind: ImageStreamTag
+      name: fulfillai-api:latest
+  triggers:
+    - type: ConfigChange
