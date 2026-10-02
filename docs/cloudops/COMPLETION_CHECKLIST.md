@@ -53,6 +53,6 @@
 - [x] Jenkins pipeline executed
 - [x] Ansible playbook executed against a Linux host
 - [ ] OpenShift workload + Route verified
-- [ ] centralized logging exercise completed (ELK or Datadog)
+- [x] centralized logging exercise completed (ELK or Datadog)
 
 Only completed items should be described as completed hands-on work on the resume.
