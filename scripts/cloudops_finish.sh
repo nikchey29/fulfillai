@@ -27,7 +27,7 @@ kubectl get pods -n monitoring
 kubectl get servicemonitor,prometheusrule -n monitoring
 
 echo "== Resolve current immutable image digest =="
-IMAGE_DIGEST="$(gcloud artifacts docker images describe "${IMAGE_REPOSITORY}:${IMAGE_TAG}" --format='value(image_summary.digest)')"
+IMAGE_DIGEST="$(gcloud artifacts docker tags list "${IMAGE_REPOSITORY}"   --filter="tag=${IMAGE_TAG}"   --format='value(version)'   | sed 's#.*@##'   | head -n 1)"
 if [[ -z "$IMAGE_DIGEST" ]]; then
   echo "Could not resolve current image digest from Artifact Registry."
   exit 1
