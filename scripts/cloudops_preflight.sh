@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-required=(git docker gcloud terraform kubectl helm curl)
+required=(git docker gcloud gke-gcloud-auth-plugin terraform kubectl helm curl)
 optional=(argocd ansible trivy)
 
 echo "FulfillAI CloudOps preflight"
