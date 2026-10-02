@@ -5,4 +5,4 @@ services:
     command:
       - bash
       - -lc
-      - apt-get update && apt-get install -y python3 curl ca-certificates git jq && sleep infinity
+      - apt-get update && apt-get install -y python3 && sleep infinity
