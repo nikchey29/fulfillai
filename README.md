@@ -3,8 +3,9 @@
 <!-- recruiter-summary:start -->
 [![source-ci](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml)
 [![api-container](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml)
+[![cloudops](https://github.com/nikchey29/fulfillai/actions/workflows/cloudops.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/cloudops.yml)
 
-**Production-style e-commerce data + ML platform** spanning PostgreSQL, dbt, Parquet feature pipelines, forecasting and operational-risk models, MLflow, FastAPI, PySpark Structured Streaming, Docker, and GitHub Actions.
+**Production-style e-commerce data, ML + CloudOps platform** spanning PostgreSQL, dbt, forecasting, streaming, MLflow, FastAPI, Docker, GitHub Actions, Terraform, GCP/GKE, Kubernetes, Helm and ArgoCD.
 
 **5,000 customers · 300 products · 12 categories · 5 warehouses · 50,000 orders**
 
@@ -16,6 +17,8 @@
 - 7-day reorder-breach risk: **0.998317 PR-AUC**, **0.975801 F1**; the synthetic-data caveat is documented in the results section below.
 
 **Leakage-safe evaluation:** train **Aug 2025–Apr 2026** → validation **May 2026** → one-time final test **Jun–Jul 2026**. Final-test access is guarded by repository-state and evaluator checks.
+
+**Verified CloudOps evidence:** Terraform-provisioned GCP/GKE deployment, Helm release, ArgoCD sync/self-heal, Prometheus metrics, Jenkins CI, Ansible idempotency, ELK log ingestion, OpenShift Route deployment, and a documented bad-release rollback drill.
 
 <!-- recruiter-summary:end -->
 
