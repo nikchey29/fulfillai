@@ -16,6 +16,11 @@ kubectl rollout status deployment/kube-prometheus-stack-operator   -n monitoring
 
 kubectl apply -f observability/
 
+kubectl wait --for=condition=Ready pod \
+  -l app.kubernetes.io/name=prometheus \
+  -n monitoring --timeout=5m || true
+
+kubectl get pods -n monitoring
 kubectl get servicemonitor,prometheusrule -n monitoring
 
 echo "== Resolve current immutable image digest =="
