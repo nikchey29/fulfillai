@@ -6,8 +6,6 @@ spec:
   to:
     kind: Service
     name: fulfillai
-  port:
-    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
