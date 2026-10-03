@@ -28,7 +28,17 @@ services:
       - "8000:8000"
     volumes:
       - ./artifacts:/app/artifacts:ro
-    restart: unless-stopped
+    restart: "on-failure:3"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: "1.0"
+    pids_limit: 256
 
   mlflow:
     profiles: ["platform"]
