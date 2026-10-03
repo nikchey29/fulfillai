@@ -1,0 +1,9 @@
+# Domain entry point
+/opt/fulfillai/venv/bin/uvicorn    --    gen_context(system_u:object_r:fulfillai_exec_t,s0)
+
+# FulfillAI source code
+/opt/fulfillai/app(/.*)?           --    gen_context(system_u:object_r:fulfillai_app_t,s0)
+
+# Python virtual-environment packages
+/opt/fulfillai/venv/lib(/.*)?      --    gen_context(system_u:object_r:fulfillai_app_t,s0)
+/opt/fulfillai/venv/lib64(/.*)?    --    gen_context(system_u:object_r:fulfillai_app_t,s0)

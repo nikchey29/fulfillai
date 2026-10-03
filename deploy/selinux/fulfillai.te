@@ -1,0 +1,137 @@
+policy_module(fulfillai, 1.2.0)
+
+########################################
+# FulfillAI process domain
+########################################
+
+type fulfillai_t;
+
+type fulfillai_exec_t;
+init_daemon_domain(fulfillai_t, fulfillai_exec_t)
+
+# systemd service has NoNewPrivileges=true
+init_nnp_daemon_domain(fulfillai_t)
+
+# DEVELOPMENT ONLY
+# Global SELinux remains enforcing.
+# Only fulfillai_t records denials without blocking them.
+
+########################################
+# FulfillAI application content
+########################################
+
+type fulfillai_app_t;
+files_type(fulfillai_app_t)
+
+########################################
+# Dedicated FulfillAI TCP port
+########################################
+
+type fulfillai_port_t;
+corenet_port(fulfillai_port_t)
+
+########################################
+# External type required for /dev/shm
+########################################
+
+gen_require(`
+    type tmpfs_t;
+')
+
+########################################
+# Application / virtualenv content
+########################################
+
+allow fulfillai_t fulfillai_app_t:dir {
+    getattr
+    search
+    open
+    read
+};
+
+allow fulfillai_t fulfillai_app_t:file {
+    getattr
+    open
+    read
+    map
+    execute
+};
+
+allow fulfillai_t fulfillai_app_t:file ioctl;
+
+allow fulfillai_t fulfillai_app_t:lnk_file {
+    getattr
+    read
+};
+
+########################################
+# System Python interpreter
+########################################
+
+corecmd_exec_bin(fulfillai_t)
+
+########################################
+# Traverse standard /usr-style paths
+########################################
+
+files_search_usr(fulfillai_t)
+
+########################################
+# TLS / OpenSSL certificate material
+########################################
+
+miscfiles_read_generic_certs(fulfillai_t)
+
+########################################
+# Limited hardware/kernel information
+# Python / NumPy inspect sysfs at runtime.
+########################################
+
+dev_read_sysfs(fulfillai_t)
+
+########################################
+# TCP server
+########################################
+
+allow fulfillai_t self:tcp_socket {
+    create
+    bind
+    listen
+    accept
+    getattr
+    getopt
+    setopt
+    read
+    write
+};
+
+corenet_tcp_bind_generic_node(fulfillai_t)
+
+allow fulfillai_t fulfillai_port_t:tcp_socket name_bind;
+
+########################################
+# Python runtime temporary shared-memory
+#
+# TEMPORARY development rule.
+# We will tighten this after the remaining
+# AVC set becomes smaller.
+########################################
+
+allow fulfillai_t tmpfs_t:dir {
+    getattr
+    search
+    write
+    add_name
+    remove_name
+};
+
+allow fulfillai_t tmpfs_t:file {
+    create
+    getattr
+    open
+    read
+    write
+    map
+    link
+    unlink
+};
