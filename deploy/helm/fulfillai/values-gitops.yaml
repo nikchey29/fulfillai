@@ -1,6 +1,6 @@
 image:
   repository: europe-west3-docker.pkg.dev/argon-tuner-396010/fulfillai/fulfillai-api
-  tag: ed1bb6ab6f3be28746abf0c1e4a2f496e5e79f21
-  digest: sha256:f652feba103cbbb07d4858f6a394651529f09eabae28ad7df38b0c1feb729c3d
+  tag: cc76e72341430186d9f946bc206af788f5a5a1ae
+  digest: sha256:673ae4e0934ba051e9d8b090da631742f2de1867ef19f5218def50a19a1add69
 serviceAccount:
   gcpServiceAccount: fulfillai-api@argon-tuner-396010.iam.gserviceaccount.com
