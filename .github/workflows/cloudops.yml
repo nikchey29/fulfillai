@@ -2,20 +2,47 @@ name: cloudops-validation
 
 on:
   push:
-    branches: [main, feat/cloudops-platform]
+    branches:
+      - main
+      - platform-engineering-v2
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
 
+concurrency:
+  group: cloudops-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  GCP_PROJECT_ID: "argon-tuner-396010"
+  GCP_REGION: "europe-west3"
+  GKE_CLUSTER: "fulfillai-gke"
+  GAR_REPOSITORY: "fulfillai"
+  WIF_PROVIDER: "projects/1089042319319/locations/global/workloadIdentityPools/fulfillai-github/providers/github"
+  GCP_DEPLOYER_SA: "fulfillai-github-deployer@argon-tuner-396010.iam.gserviceaccount.com"
+
 jobs:
   source:
+    name: Source tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          python-version: "3.11"
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Compile
@@ -26,22 +53,34 @@ jobs:
         run: python -m pytest -q
 
   terraform:
+    name: Terraform validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-      - name: Terraform fmt
-        run: terraform -chdir=infra/gcp/terraform fmt -recursive
-      - name: Terraform init
-        run: terraform -chdir=infra/gcp/terraform init -backend=false
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform format gate
+        run: terraform -chdir=infra/gcp/terraform fmt -check -recursive
+      - name: Terraform init without backend
+        run: terraform -chdir=infra/gcp/terraform init -backend=false -input=false
       - name: Terraform validate
         run: terraform -chdir=infra/gcp/terraform validate
 
   helm:
+    name: Helm validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
       - name: Helm lint
         run: helm lint deploy/helm/fulfillai
       - name: Helm render
@@ -50,12 +89,19 @@ jobs:
             --namespace fulfillai \
             --set image.repository=example.invalid/fulfillai-api \
             --set image.tag=${{ github.sha }} >/tmp/fulfillai-rendered.yaml
+          test -s /tmp/fulfillai-rendered.yaml
 
   container:
+    name: Container build and security scan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build API image
         uses: docker/build-push-action@v6
         with:
@@ -64,11 +110,50 @@ jobs:
           push: false
           load: true
           tags: fulfillai-api:${{ github.sha }}
-
-      - name: Trivy image scan
+      - name: Trivy HIGH and CRITICAL gate
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: fulfillai-api:${{ github.sha }}
           format: table
-          exit-code: "0"
+          exit-code: "1"
           severity: HIGH,CRITICAL
+          ignore-unfixed: false
+
+  cloud-identity:
+    name: Keyless GCP identity smoke test
+    if: github.event_name == 'push'
+    needs:
+      - source
+      - terraform
+      - helm
+      - container
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SA }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Verify federated identity and read-only delivery targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)')"
+          test "$ACTIVE_ACCOUNT" = "$GCP_DEPLOYER_SA"
+          gcloud artifacts repositories describe "$GAR_REPOSITORY" --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)' >/dev/null
+          gcloud container clusters describe "$GKE_CLUSTER" --region="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)' >/dev/null
+          echo "KEYLESS_GCP_IDENTITY=PASS"
