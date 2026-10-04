@@ -317,7 +317,7 @@ jobs:
           done
           test "${PASS}" = "YES"
           kubectl -n fulfillai rollout status deployment/fulfillai --timeout=60s
-          POD_IMAGES="$(kubectl -n fulfillai get pods -l app.kubernetes.io/name=fulfillai -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}')"
+          POD_IMAGES="$(kubectl -n fulfillai get pods -l app.kubernetes.io/name=fulfillai -o json | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(x["spec"]["containers"][0]["image"] for x in d.get("items", []) if not x.get("metadata", {}).get("deletionTimestamp") and x.get("status", {}).get("phase") == "Running"))')"
           POD_COUNT="$(printf '%s\n' "${POD_IMAGES}" | sed '/^$/d' | wc -l | tr -d ' ')"
           MISMATCH="$(printf '%s\n' "${POD_IMAGES}" | awk -v target="${TARGET_IMAGE}" 'NF && $0 != target {n++} END {print n+0}')"
           test "${POD_COUNT}" -ge 2
