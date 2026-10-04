@@ -1,0 +1,11 @@
+vulnerabilities:
+  - id: CVE-2026-48818
+    paths:
+      - "usr/local/lib/python3.11/site-packages/starlette-0.52.1.dist-info/METADATA"
+    expired_at: 2026-11-15
+    statement: "FulfillAI runs in a Linux container and does not use Starlette StaticFiles or UNC-path handling; re-evaluate when a fixed stable FastAPI/Starlette combination is available."
+  - id: CVE-2026-54283
+    paths:
+      - "usr/local/lib/python3.11/site-packages/starlette-0.52.1.dist-info/METADATA"
+    expired_at: 2026-11-15
+    statement: "FulfillAI API does not use request.form() or HTML form parsing; re-evaluate when a fixed stable FastAPI/Starlette combination is available."

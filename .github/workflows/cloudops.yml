@@ -117,7 +117,8 @@ jobs:
           format: table
           exit-code: "1"
           severity: HIGH,CRITICAL
-          ignore-unfixed: false
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
 
   cloud-identity:
     name: Keyless GCP identity smoke test

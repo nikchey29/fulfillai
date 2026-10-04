@@ -1,9 +1,13 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && \\
+    apt-get upgrade -y && \\
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -11,9 +15,11 @@ COPY requirements.txt ./requirements.txt
 
 RUN python -m pip install --no-cache-dir -r requirements.txt && \
     python -m pip install --no-cache-dir \
-      "fastapi>=0.115,<1" \
-      "uvicorn[standard]>=0.30,<1" \
-      "prometheus-fastapi-instrumentator>=7.0,<8.0" && \
+      "fastapi==0.142.2" \
+      "starlette==0.52.1" \
+      "uvicorn[standard]==0.54.0" \
+      "prometheus-fastapi-instrumentator==7.1.0" && \
+    python -m pip uninstall -y setuptools && \
     python -m pip check
 
 RUN useradd --create-home --uid 10001 appuser
