@@ -1,0 +1,31 @@
+{{- if and .Values.alerting.enabled .Values.alerting.slack.enabled }}
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: fulfillai-slack
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fulfillai
+    app.kubernetes.io/part-of: fulfillai
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  route:
+    receiver: fulfillai-slack
+    groupBy:
+      - alertname
+      - severity
+    groupWait: 5s
+    groupInterval: 5m
+    repeatInterval: 4h
+    matchers:
+      - name: service
+        value: fulfillai
+        matchType: "="
+  receivers:
+    - name: fulfillai-slack
+      slackConfigs:
+        - apiURL:
+            name: {{ .Values.alerting.slack.secretName }}
+            key: {{ .Values.alerting.slack.secretKey }}
+          sendResolved: true
+{{- end }}

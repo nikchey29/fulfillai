@@ -42,3 +42,7 @@ alerting:
   ruleName: fulfillai-alerts
   team: platform-engineering
   runbookBaseUrl: https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/runbooks
+  slack:
+    enabled: true
+    secretName: fulfillai-slack-webhook
+    secretKey: url

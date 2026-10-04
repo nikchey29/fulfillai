@@ -30,18 +30,18 @@ spec:
             (
               1 -
               (
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[1h]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[1h]))
                 /
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[1h]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[1h]))
               )
             ) > 0.0144
             and
             (
               1 -
               (
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[5m]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[5m]))
                 /
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m]))
               )
             ) > 0.0144
           for: 2m
@@ -60,18 +60,18 @@ spec:
             (
               1 -
               (
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[6h]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[6h]))
                 /
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[6h]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[6h]))
               )
             ) > 0.006
             and
             (
               1 -
               (
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[30m]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[30m]))
                 /
-                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[30m]))
+                sum by (namespace) (rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[30m]))
               )
             ) > 0.006
           for: 10m
