@@ -190,3 +190,144 @@ jobs:
           gcloud artifacts repositories describe "$GAR_REPOSITORY" --location="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)' >/dev/null
           gcloud container clusters describe "$GKE_CLUSTER" --region="$GCP_REGION" --project="$GCP_PROJECT_ID" --format='value(name)' >/dev/null
           echo "KEYLESS_GCP_IDENTITY=PASS"
+
+  gitops-delivery:
+    name: GitOps promote and verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/platform-engineering-v2'
+    needs:
+      - source
+      - terraform
+      - helm
+      - container
+      - cloud-identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout delivery branch
+        uses: actions/checkout@v7
+        with:
+          ref: platform-engineering-v2
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v3
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Resolve immutable image and reject stale promotion
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin platform-engineering-v2 --quiet
+          REMOTE_SHA="$(git rev-parse origin/platform-engineering-v2)"
+          test "${REMOTE_SHA}" = "${GITHUB_SHA}"
+          IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/fulfillai-api"
+          DIGEST="$(gcloud artifacts docker images describe "${IMAGE_URI}:${GITHUB_SHA}" --project="${GCP_PROJECT_ID}" --format='value(image_summary.digest)')"
+          case "${DIGEST}" in
+            sha256:*) ;;
+            *) echo "Invalid digest: ${DIGEST}"; exit 1 ;;
+          esac
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+          echo "immutable=${IMAGE_URI}@${DIGEST}" >> "${GITHUB_OUTPUT}"
+
+      - name: Update and validate GitOps desired state
+        env:
+          IMAGE_URI: ${{ steps.artifact.outputs.image_uri }}
+          DIGEST: ${{ steps.artifact.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i -E "s|^  repository:.*|  repository: ${IMAGE_URI}|" deploy/helm/fulfillai/values-gitops.yaml
+          sed -i -E "s|^  tag:.*|  tag: ${GITHUB_SHA}|" deploy/helm/fulfillai/values-gitops.yaml
+          sed -i -E "s|^  digest:.*|  digest: ${DIGEST}|" deploy/helm/fulfillai/values-gitops.yaml
+          git diff --check
+          CHANGED="$(git diff --name-only)"
+          test "${CHANGED}" = "deploy/helm/fulfillai/values-gitops.yaml"
+          helm lint deploy/helm/fulfillai -f deploy/helm/fulfillai/values-gitops.yaml
+          helm template fulfillai deploy/helm/fulfillai --namespace fulfillai -f deploy/helm/fulfillai/values-gitops.yaml >/tmp/fulfillai-gitops-render.yaml
+          grep -F "${IMAGE_URI}@${DIGEST}" /tmp/fulfillai-gitops-render.yaml >/dev/null
+
+      - name: Commit desired state
+        id: promote
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin platform-engineering-v2 --quiet
+          REMOTE_SHA="$(git rev-parse origin/platform-engineering-v2)"
+          test "${REMOTE_SHA}" = "${GITHUB_SHA}"
+          git add deploy/helm/fulfillai/values-gitops.yaml
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            DELIVERY_SHA="$(git rev-parse HEAD)"
+          else
+            git commit -m "chore(gitops): promote ${GITHUB_SHA:0:12}"
+            DELIVERY_SHA="$(git rev-parse HEAD)"
+            git push origin HEAD:platform-engineering-v2
+          fi
+          echo "delivery_sha=${DELIVERY_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for GitOps rollout
+        env:
+          TARGET_IMAGE: ${{ steps.artifact.outputs.immutable }}
+          DELIVERY_SHA: ${{ steps.promote.outputs.delivery_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS=NO
+          for i in $(seq 1 120); do
+            LIVE_IMAGE="$(kubectl -n fulfillai get deployment fulfillai -o jsonpath='{.spec.template.spec.containers[?(@.name=="fulfillai")].image}' 2>/dev/null || true)"
+            DESIRED="$(kubectl -n fulfillai get deployment fulfillai -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            UPDATED="$(kubectl -n fulfillai get deployment fulfillai -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
+            READY="$(kubectl -n fulfillai get deployment fulfillai -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
+            AVAILABLE="$(kubectl -n fulfillai get deployment fulfillai -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            DESIRED="${DESIRED:-0}"
+            UPDATED="${UPDATED:-0}"
+            READY="${READY:-0}"
+            AVAILABLE="${AVAILABLE:-0}"
+            if [ "${LIVE_IMAGE}" = "${TARGET_IMAGE}" ] && [ "${DESIRED}" -ge 2 ] && [ "${UPDATED}" -eq "${DESIRED}" ] && [ "${READY}" -eq "${DESIRED}" ] && [ "${AVAILABLE}" -eq "${DESIRED}" ]; then
+              PASS=YES
+              break
+            fi
+            sleep 5
+          done
+          test "${PASS}" = "YES"
+          kubectl -n fulfillai rollout status deployment/fulfillai --timeout=60s
+          POD_IMAGES="$(kubectl -n fulfillai get pods -l app.kubernetes.io/name=fulfillai -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}')"
+          POD_COUNT="$(printf '%s\n' "${POD_IMAGES}" | sed '/^$/d' | wc -l | tr -d ' ')"
+          MISMATCH="$(printf '%s\n' "${POD_IMAGES}" | sed '/^$/d' | grep -Fvx "${TARGET_IMAGE}" | wc -l | tr -d ' ')"
+          test "${POD_COUNT}" -ge 2
+          test "${MISMATCH}" -eq 0
+          echo "GITOPS_DELIVERY=PASS"
+          echo "SourceCommit=${GITHUB_SHA}"
+          echo "DeliveryCommit=${DELIVERY_SHA}"
+          echo "ImmutableImage=${TARGET_IMAGE}"
+          echo "DesiredReplicas=${DESIRED}"
+          echo "ReadyReplicas=${READY}"
+          echo "Controller=ArgoCD"
+          echo "DirectHelmUpgrade=NO"
+          echo "DirectDeploymentPatch=NO"
