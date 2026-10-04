@@ -95,6 +95,9 @@ jobs:
     name: Container build and security scan
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -119,6 +122,35 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
+      - name: Authenticate to Google Cloud for image publishing
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SA }}
+      - name: Setup gcloud for image publishing
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+      - name: Publish verified image to Artifact Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/platform-engineering-v2'
+        shell: bash
+        run: |
+          set -euo pipefail
+          REGISTRY="${GCP_REGION}-docker.pkg.dev"
+          IMAGE_URI="${REGISTRY}/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/fulfillai-api"
+          gcloud auth configure-docker "${REGISTRY}" --quiet
+          docker tag "fulfillai-api:${GITHUB_SHA}" "${IMAGE_URI}:${GITHUB_SHA}"
+          docker push "${IMAGE_URI}:${GITHUB_SHA}"
+          DIGEST="$(gcloud artifacts docker images describe "${IMAGE_URI}:${GITHUB_SHA}" --format='value(image_summary.digest)')"
+          test -n "${DIGEST}"
+          case "${DIGEST}" in
+            sha256:*) ;;
+            *) echo "Invalid digest: ${DIGEST}"; exit 1 ;;
+          esac
+          echo "PUBLISHED_IMAGE=${IMAGE_URI}:${GITHUB_SHA}"
+          echo "PUBLISHED_DIGEST=${DIGEST}"
+          echo "PUBLISHED_IMMUTABLE=${IMAGE_URI}@${DIGEST}"
 
   cloud-identity:
     name: Keyless GCP identity smoke test
