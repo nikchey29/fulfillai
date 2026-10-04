@@ -45,7 +45,7 @@ resource "google_artifact_registry_repository" "fulfillai" {
     application = "fulfillai"
     environment = var.environment
   }
-  depends_on    = [google_project_service.required]
+  depends_on = [google_project_service.required]
 }
 
 resource "google_container_cluster" "fulfillai" {
@@ -58,8 +58,8 @@ resource "google_container_cluster" "fulfillai" {
   workload_identity_config {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
-  network           = google_compute_network.fulfillai.id
-  subnetwork        = google_compute_subnetwork.gke.id
+  network    = google_compute_network.fulfillai.id
+  subnetwork = google_compute_subnetwork.gke.id
 
   ip_allocation_policy {
     cluster_secondary_range_name  = "pods"
@@ -71,7 +71,7 @@ resource "google_container_cluster" "fulfillai" {
     environment = var.environment
   }
 
-  deletion_protection = false
+  deletion_protection = true
   depends_on          = [google_project_service.required]
 }
 
