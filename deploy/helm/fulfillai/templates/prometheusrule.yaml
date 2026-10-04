@@ -1,0 +1,27 @@
+{{- if .Values.alerting.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Values.alerting.ruleName }}
+  namespace: {{ .Values.alerting.namespace }}
+  labels:
+    release: {{ .Values.alerting.releaseLabel }}
+    app.kubernetes.io/name: fulfillai
+    app.kubernetes.io/part-of: fulfillai
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  groups:
+    - name: fulfillai
+      rules:
+        - alert: FulfillAIHighPodRestartRate
+          expr: increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}"}[15m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+            service: fulfillai
+            team: {{ .Values.alerting.team }}
+          annotations:
+            summary: FulfillAI pod is restarting repeatedly
+            description: FulfillAI containers restarted more than twice within 15 minutes and the condition persisted for 5 minutes.
+            runbook_url: {{ printf "%s/FULFILLAI_POD_RESTARTS.md" .Values.alerting.runbookBaseUrl | quote }}
+{{- end }}

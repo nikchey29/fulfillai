@@ -17,7 +17,6 @@ helm upgrade --install kube-prometheus-stack   prometheus-community/kube-prometh
 kubectl rollout status deployment/kube-prometheus-stack-operator   -n monitoring --timeout=5m
 
 kubectl apply -f observability/servicemonitor.yaml
-kubectl apply -f observability/prometheusrule.yaml
 
 kubectl wait --for=condition=Ready pod \
   -l app.kubernetes.io/name=prometheus \

@@ -34,3 +34,11 @@ env:
 
 serviceAccount:
   gcpServiceAccount: ""
+
+alerting:
+  enabled: true
+  namespace: monitoring
+  releaseLabel: kube-prometheus-stack
+  ruleName: fulfillai-alerts
+  team: platform-engineering
+  runbookBaseUrl: https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/runbooks
