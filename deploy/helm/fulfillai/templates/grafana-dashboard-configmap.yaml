@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fulfillai-grafana-dashboard
+  labels:
+    app.kubernetes.io/name: fulfillai
+    app.kubernetes.io/part-of: fulfillai
+    grafana_dashboard: "1"
+data:
+  fulfillai-sre-overview.json: |
+{{ .Files.Get "dashboards/fulfillai-sre-overview.json" | indent 4 }}
