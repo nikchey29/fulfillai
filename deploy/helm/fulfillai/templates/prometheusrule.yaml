@@ -24,4 +24,64 @@ spec:
             summary: FulfillAI pod is restarting repeatedly
             description: FulfillAI containers restarted more than twice within 15 minutes and the condition persisted for 5 minutes.
             runbook_url: {{ printf "%s/FULFILLAI_POD_RESTARTS.md" .Values.alerting.runbookBaseUrl | quote }}
+
+        - alert: FulfillAIFastSLOBurn
+          expr: |
+            (
+              1 -
+              (
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[1h]))
+                /
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[1h]))
+              )
+            ) > 0.0144
+            and
+            (
+              1 -
+              (
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[5m]))
+                /
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m]))
+              )
+            ) > 0.0144
+          for: 2m
+          labels:
+            severity: critical
+            service: fulfillai
+            team: {{ .Values.alerting.team }}
+            slo: "99.9"
+          annotations:
+            summary: FulfillAI is rapidly consuming its HTTP error budget
+            description: FulfillAI exceeded the 14.4x error-budget burn threshold across both the 1h and 5m windows.
+            runbook_url: {{ printf "%s/FULFILLAI_SLO_BURN.md" .Values.alerting.runbookBaseUrl | quote }}
+
+        - alert: FulfillAISlowSLOBurn
+          expr: |
+            (
+              1 -
+              (
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[6h]))
+                /
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[6h]))
+              )
+            ) > 0.006
+            and
+            (
+              1 -
+              (
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}",status=~"2.."}[30m]))
+                /
+                sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[30m]))
+              )
+            ) > 0.006
+          for: 10m
+          labels:
+            severity: warning
+            service: fulfillai
+            team: {{ .Values.alerting.team }}
+            slo: "99.9"
+          annotations:
+            summary: FulfillAI is steadily consuming its HTTP error budget
+            description: FulfillAI exceeded the 6x error-budget burn threshold across both the 6h and 30m windows.
+            runbook_url: {{ printf "%s/FULFILLAI_SLO_BURN.md" .Values.alerting.runbookBaseUrl | quote }}
 {{- end }}

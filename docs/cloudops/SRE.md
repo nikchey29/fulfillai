@@ -28,3 +28,13 @@ FulfillAI alert rules are delivered through the application Helm chart and recon
 The current restart alert is `FulfillAIHighPodRestartRate`. Its response procedure is documented in `docs/runbooks/FULFILLAI_POD_RESTARTS.md`.
 
 Alert metadata includes severity, service ownership, a human-readable description, and a runbook URL. SLO-based alerting and Alertmanager routing are handled as separate validation phases so routing is not claimed until a real receiver is configured and tested.
+
+## Multi-window burn-rate alerting
+
+FulfillAI uses two HTTP error-budget burn alerts for the 99.9% lab SLO.
+
+`FulfillAIFastSLOBurn` uses a 14.4x burn threshold and requires both a 1-hour and 5-minute breach.
+
+`FulfillAISlowSLOBurn` uses a 6x burn threshold and requires both a 6-hour and 30-minute breach.
+
+Both alerts are stored in the application Helm chart and delivered through the GitOps path. Alertmanager notification routing remains a separate requirement and is not considered complete until a real receiver is configured and tested.
