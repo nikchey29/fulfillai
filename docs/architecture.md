@@ -121,7 +121,7 @@ Random train/test splitting is deliberately avoided for all time-dependent tasks
 Demand is heavily zero-inflated. The final architecture is a hurdle model:
 
 ```mermaid
-flowchart LR
+flowchart TB
     X[Leakage-safe historical features] --> C[Occurrence classifier]
     X --> R[Magnitude regressor trained on positive-demand rows]
     C --> P[P demand > 0]
@@ -161,7 +161,7 @@ Predictors are restricted to information available before the forecast horizon, 
 The final evaluation design is a first-class part of the system rather than an informal convention.
 
 ```mermaid
-flowchart LR
+flowchart TB
     TR[TRAIN] --> FIT[Fit candidates]
     VA[VALIDATION] --> SEL[Select model + threshold]
     FIT --> SEL
@@ -188,14 +188,20 @@ models/*
 
 This keeps the public repository lightweight and avoids accidentally publishing large Parquet or Joblib files. Reproducibility comes from source code, deterministic configuration, metadata contracts, and documented final results.
 
-## 9. Platform boundaries and open extensions
+## 9. Completed cloud delivery and operating model
+
+The API platform lab now includes Terraform-managed GCP/GKE resources, keyless Actions OIDC/WIF, scanned immutable images, guarded GitOps promotion and Argo CD deployment ownership. Prometheus/Grafana, multi-window lab-SLO rules and Secret-backed Slack alert delivery were verified, together with rollback and self-healing drills.
+
+See [Platform Engineering V2](cloudops/V2_OVERVIEW.md) for the delivery and observability diagrams, exact source/run links and scope. The original frozen modeling workflow remains separate from cloud delivery: a successful /health or /metrics check is not proof that every prediction artifact or database/streaming component was exercised in GKE.
+
+## 10. Platform boundaries and open extensions
 
 The platform additions are intentionally narrower than a production commerce system. The repository currently contains working local paths for dbt, API serving, MLflow, Redpanda/PySpark streaming, PostgreSQL reconciliation, Docker, and Tableau. Azure Container Apps is represented by Bicep but has not been treated as a completed deployment.
 
-The next architectural questions I am interested in are monitoring, online/offline feature consistency, and tighter reconciliation between batch and streaming outputs:
+Service health/metrics and lab alerting are completed. Open extensions concern model/data-drift monitoring, online/offline feature consistency and tighter reconciliation between batch and streaming outputs:
 
 ```mermaid
-flowchart LR
+flowchart TB
     BATCH[Batch analytical state] --> REC[Reconciliation]
     STREAM[Streaming operational state] --> REC
     REC --> MON[Data + prediction monitoring]

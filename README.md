@@ -1,64 +1,44 @@
 # FulfillAI
 
 <!-- recruiter-summary:start -->
-[![source-ci](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/ci.yml)
-[![api-container](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/container.yml)
-[![cloudops](https://github.com/nikchey29/fulfillai/actions/workflows/cloudops.yml/badge.svg)](https://github.com/nikchey29/fulfillai/actions/workflows/cloudops.yml)
+**Data, ML & CloudOps Platform - independent engineering and a verified platform lab.**
 
-**Production-style e-commerce data, ML + CloudOps platform** spanning PostgreSQL, dbt, forecasting, streaming, MLflow, FastAPI, Docker, GitHub Actions, Terraform, GCP/GKE, Kubernetes, Helm and ArgoCD.
+FulfillAI starts with **50K synthetic orders**, PostgreSQL/dbt, forecasting and risk models, Redpanda/PySpark streaming, MLflow and FastAPI. It now includes a completed GCP/GKE platform implementation covering keyless CI, immutable GitOps delivery, observability, alert routing and recovery exercises.
 
-**5,000 customers · 300 products · 12 categories · 5 warehouses · 50,000 orders**
+| Evidence | Result |
+|---|---|
+| Demand forecasting | **88.24% -> 69.59% WAPE**, **21.14% relative reduction** vs rolling-28 baseline |
+| Delivery risk | **0.303115** late-delivery PR-AUC; **0.167229** exception PR-AUC |
+| Delivery automation | Terraform/GCP/GKE; Actions OIDC/WIF; scanned images; immutable digests; Helm/Argo CD |
+| Operations | Versioned Grafana dashboard, Prometheus burn alerts, Secret-backed Slack routing, rollback and self-healing |
 
-**Frozen final-test results**
-- Demand forecasting: **69.588% WAPE**, **21.14% relative improvement** vs. a rolling-28 baseline.
-- Late-delivery risk: **0.303115 PR-AUC** (**3.28×** the test-prevalence baseline).
-- Delivery-exception risk: **0.167229 PR-AUC** (**4.13×** the test-prevalence baseline).
-- 7-day stockout risk: **0.359567 PR-AUC**, **0.992886 ROC-AUC**, **0.832911 recall**.
-- 7-day reorder-breach risk: **0.998317 PR-AUC**, **0.975801 F1**; the synthetic-data caveat is documented in the results section below.
+**V2 source:** [`platform-engineering-v2`](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2) · **[Verified overview and evidence](docs/cloudops/V2_OVERVIEW.md)** · **[Successful delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366)**
 
-**Leakage-safe evaluation:** train **Aug 2025–Apr 2026** → validation **May 2026** → one-time final test **Jun–Jul 2026**. Final-test access is guarded by repository-state and evaluator checks.
-
-**Verified CloudOps evidence:** Terraform-provisioned GCP/GKE deployment, Helm release, ArgoCD sync/self-heal, Prometheus metrics, Jenkins CI, Ansible idempotency, ELK log ingestion, OpenShift Route deployment, and a documented bad-release rollback drill.
-
+The completed V2 implementation is on its own branch, not merged into `main`. The closure snapshot is [`d8362db`](https://github.com/nikchey29/fulfillai/commit/d8362dbafd87d703f0f8358a792f55b7d7a07dd6). The **99.9% SLO is a lab target**, not measured historical production availability. Synthetic model scores and controlled deployment drills are described with their limits below.
 <!-- recruiter-summary:end -->
 
 
-## CloudOps / DevOps extension
+## CloudOps / Platform Engineering V2
 
-FulfillAI now also includes a **verified cloud-native operations path** built around the API service.
+The platform work extends the API without reopening frozen ML experiments. Terraform provisions GCP networking, Artifact Registry and GKE Autopilot. GitHub Actions validates/tests, builds/scans images, authenticates keylessly through OIDC/WIF and commits an exact digest to Git-backed desired state. Argo CD reconciles the Helm workload with automated sync/prune/self-heal.
 
-**Verified hands-on deployment path**
-
-```text
-GitHub / GitHub Actions
-        ↓
-Docker image
-        ↓
-Google Artifact Registry
-        ↓
-Terraform → GCP VPC / subnet / GKE Autopilot
-        ↓
-Kubernetes + Helm
-        ↓
-ArgoCD GitOps
-        ↓
-Prometheus / Grafana
-        ↓
-incident diagnosis + rollback
+```mermaid
+flowchart TB
+    Git["GitHub source"] --> CI["Actions: tests, Terraform/Helm validation and Trivy"]
+    CI --> WIF["Keyless GCP authentication"]
+    WIF --> Image["Artifact Registry: SHA256 image"]
+    Image --> Desired["Guarded GitOps desired-state commit"]
+    Desired --> Argo["Argo CD deployment controller"]
+    Argo --> GKE["GKE Autopilot and FastAPI"]
 ```
 
-Additional executed exercises:
-- **Jenkins:** successful FulfillAI CI pipeline run.
-- **Ansible:** Linux host configuration with a second-run `changed=0` idempotency check.
-- **ELK:** structured FulfillAI log ingested through Logstash into Elasticsearch and inspected through the local stack.
-- **OpenShift:** native ImageStream / BuildConfig build, Deployment, Service, TLS Route, and live `/health` verification.
-- **Reliability:** readiness/liveness probes, immutable image-digest rollout, deliberate bad-release exercise, recovery, and documented incident notes.
-- **GitOps:** ArgoCD application reached Synced/Healthy and automatic self-healing was observed after intentional configuration drift.
+**Observability:** `/metrics` -> Prometheus/PromQL -> versioned Grafana dashboard; PrometheusRule -> Alertmanager -> Secret-backed Slack receiver. A synthetic notification was verified end to end. Fast and slow multi-window burn alerts target a **99.9% lab SLO**.
 
-The Kubernetes/Helm manifests also contain HPA, RBAC, NetworkPolicy, ServiceMonitor and alert-rule definitions. Their live verification status is tracked separately in [`docs/cloudops/COMPLETION_CHECKLIST.md`](docs/cloudops/COMPLETION_CHECKLIST.md), so repository claims stay evidence-based.
+**Reliability and security:** non-root containers, probes, resource/security contexts, intentional GitOps drift correction, a deliberate `ImagePullBackOff` drill and documented rollback/runbooks. HPA/PDB/RBAC runtime evidence includes a separate local kind lab; NetworkPolicy object/selector verification is not a claim of packet-level enforcement.
 
-See [`docs/cloudops/README.md`](docs/cloudops/README.md) and [`docs/cloudops/RESUME_EVIDENCE.md`](docs/cloudops/RESUME_EVIDENCE.md) for the implementation and evidence boundary.
+**Additional hands-on exercises:** Jenkins CI, Ansible idempotency (`changed=0`), local ELK structured logging and OpenShift build/Service/TLS Route health verification. Linux/systemd/SELinux work was completed in a separate Rocky Linux lab.
 
+Start with the **[V2 overview](docs/cloudops/V2_OVERVIEW.md)** for architecture, exact evidence paths, debugging lessons and scope. Detailed implementation is on [`platform-engineering-v2`](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2); `main` retains the earlier implementation baseline. The cloud verification covers the API health/metrics and delivery path, not an assertion that every ML/data component ran in GKE.
 
 
 **A supply-chain data and machine-learning system built around one idea: predictions are only useful when the data path behind them is trustworthy.**
@@ -94,7 +74,7 @@ FulfillAI currently includes:
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
     A[Deterministic simulation] --> B[Validation]
     B --> C[(PostgreSQL)]
     C --> D[SQL / dbt models]
