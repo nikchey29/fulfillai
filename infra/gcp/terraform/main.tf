@@ -110,3 +110,137 @@ resource "google_service_account_iam_member" "workload_identity" {
 
   depends_on = [google_container_cluster.fulfillai]
 }
+
+resource "google_project_service" "github_federation" {
+
+  for_each = toset([
+
+    "iamcredentials.googleapis.com",
+
+    "sts.googleapis.com"
+
+  ])
+
+
+
+  project = var.project_id
+
+  service = each.value
+
+  disable_on_destroy = false
+
+}
+
+
+
+resource "google_iam_workload_identity_pool" "github_actions" {
+
+  workload_identity_pool_id = "fulfillai-github"
+
+  display_name = "FulfillAI GitHub Actions"
+
+  description = "Keyless GitHub Actions federation for FulfillAI delivery"
+
+
+
+  depends_on = [google_project_service.github_federation]
+
+}
+
+
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+
+  workload_identity_pool_id = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
+
+  workload_identity_pool_provider_id = "github"
+
+  display_name = "FulfillAI GitHub"
+
+
+
+  attribute_mapping = {
+
+    "google.subject" = "assertion.sub"
+
+    "attribute.repository" = "assertion.repository"
+
+    "attribute.repository_id" = "assertion.repository_id"
+
+    "attribute.repository_owner" = "assertion.repository_owner"
+
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+
+    "attribute.ref" = "assertion.ref"
+
+  }
+
+
+
+  attribute_condition = "assertion.repository_owner_id == \"${var.github_repository_owner_id}\" && assertion.repository_id == \"${var.github_repository_id}\""
+
+
+
+  oidc {
+
+    issuer_uri = "https://token.actions.githubusercontent.com"
+
+  }
+
+}
+
+
+
+resource "google_service_account" "github_deployer" {
+
+  account_id = "fulfillai-github-deployer"
+
+  display_name = "FulfillAI GitHub deployer"
+
+  description = "Keyless CI/CD deployment identity for the FulfillAI GitHub repository"
+
+
+
+  depends_on = [google_project_service.github_federation]
+
+}
+
+
+
+resource "google_service_account_iam_member" "github_deployer_wif" {
+
+  service_account_id = google_service_account.github_deployer.name
+
+  role = "roles/iam.workloadIdentityUser"
+
+  member = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository_id/${var.github_repository_id}"
+
+}
+
+
+
+resource "google_artifact_registry_repository_iam_member" "github_deployer_writer" {
+
+  project = var.project_id
+
+  location = var.region
+
+  repository = google_artifact_registry_repository.fulfillai.repository_id
+
+  role = "roles/artifactregistry.writer"
+
+  member = "serviceAccount:${google_service_account.github_deployer.email}"
+
+}
+
+
+
+resource "google_project_iam_member" "github_deployer_gke" {
+
+  project = var.project_id
+
+  role = "roles/container.developer"
+
+  member = "serviceAccount:${google_service_account.github_deployer.email}"
+
+}

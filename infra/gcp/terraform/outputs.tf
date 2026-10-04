@@ -22,3 +22,21 @@ output "workload_service_account" {
 output "database_secret_name" {
   value = google_secret_manager_secret.database_url.secret_id
 }
+
+output "github_workload_identity_provider" {
+
+  description = "Full Workload Identity Provider name for GitHub Actions."
+
+  value = google_iam_workload_identity_pool_provider.github.name
+
+}
+
+
+
+output "github_deployer_service_account" {
+
+  description = "Service account impersonated by the FulfillAI GitHub Actions delivery workflow."
+
+  value = google_service_account.github_deployer.email
+
+}
