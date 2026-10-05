@@ -7,10 +7,12 @@ FulfillAI starts with **50K synthetic orders**, PostgreSQL/dbt, forecasting and 
 
 | Evidence | Result |
 |---|---|
-| Demand forecasting | **88.24% -> 69.59% WAPE**, **21.14% relative reduction** vs rolling-28 baseline |
-| Delivery risk | **0.303115** late-delivery PR-AUC; **0.167229** exception PR-AUC |
+| Demand forecasting | **69.59% model vs 88.24% rolling-28 WAPE** on **63,501 synthetic test rows** (Jun–Jul 2026); **21.14% relative reduction** |
+| Delivery risk | **0.303115** late-delivery PR-AUC (7,625 delivered shipments); **0.167229** exception PR-AUC (7,947 shipments); synthetic V2 benchmark |
 | Delivery automation | Terraform/GCP/GKE; Actions OIDC/WIF; scanned images; immutable digests; Helm/Argo CD |
 | Operations | Versioned Grafana dashboard, Prometheus burn alerts, Secret-backed Slack routing, rollback and self-healing |
+
+**Demand trade-off:** 69.59% WAPE remains high error. RMSE is worse than rolling-28: **0.934 model vs 0.837 baseline**. These are frozen synthetic-model results, not real-world supply-chain accuracy. [Detailed results and test scope](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/results.md).
 
 **V2 source:** [`platform-engineering-v2`](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2) · **[Verified overview and evidence](docs/cloudops/V2_OVERVIEW.md)** · **[Successful delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366)**
 
