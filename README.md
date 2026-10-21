@@ -1,22 +1,15 @@
 # FulfillAI
 
 <!-- recruiter-summary:start -->
-**Data, ML & CloudOps Platform - independent engineering and a verified platform lab.**
+I built FulfillAI to practise the work that happens around an ML model: keeping operational data consistent, preventing time leakage, shipping an API and finding out what breaks when you deploy it. Everything starts with **50,000 simulated orders** — not real customers or a production employer.
 
-FulfillAI starts with **50K synthetic orders**, PostgreSQL/dbt, forecasting and risk models, Redpanda/PySpark streaming, MLflow and FastAPI. It now includes a completed GCP/GKE platform implementation covering keyless CI, immutable GitOps delivery, observability, alert routing and recovery exercises.
+The ML results weren't uniformly impressive. Demand forecasting improved from **88.24% baseline WAPE to 69.59%** on 63,501 synthetic test rows (a 21.14% relative reduction), but that still leaves large errors; RMSE was **worse** than the baseline (0.934 vs 0.837). I kept the trade-off visible because it changed how I think about evaluating models.
 
-| Evidence | Result |
-|---|---|
-| Demand forecasting | **69.59% model vs 88.24% rolling-28 WAPE** on **63,501 synthetic test rows** (Jun–Jul 2026); **21.14% relative reduction** |
-| Delivery risk | **0.303115** late-delivery PR-AUC (7,625 delivered shipments); **0.167229** exception PR-AUC (7,947 shipments); synthetic V2 benchmark |
-| Delivery automation | Terraform/GCP/GKE; Actions OIDC/WIF; scanned images; immutable digests; Helm/Argo CD |
-| Operations | Versioned Grafana dashboard, Prometheus burn alerts, Secret-backed Slack routing, rollback and self-healing |
+On a separate [platform-engineering-v2 branch](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2), I deployed and tested the API delivery path with **Terraform, GCP/GKE, keyless GitHub Actions, digest-based GitOps, Argo CD, Prometheus and Grafana**. I broke a deployment on purpose, traced `ImagePullBackOff`, and practised rolling back while keeping GitOps reconciliation under control.
 
-**Demand trade-off:** 69.59% WAPE remains high error. RMSE is worse than rolling-28: **0.934 model vs 0.837 baseline**. These are frozen synthetic-model results, not real-world supply-chain accuracy. [Detailed results and test scope](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/results.md).
+**Start here:** [Platform implementation and evidence](docs/cloudops/V2_OVERVIEW.md) · [Recorded successful CI/delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366) · [Model results and sample sizes](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/results.md)
 
-**V2 source:** [`platform-engineering-v2`](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2) · **[Verified overview and evidence](docs/cloudops/V2_OVERVIEW.md)** · **[Successful delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366)**
-
-The completed V2 implementation is on its own branch, not merged into `main`. The closure snapshot is [`d8362db`](https://github.com/nikchey29/fulfillai/commit/d8362dbafd87d703f0f8358a792f55b7d7a07dd6). The **99.9% SLO is a lab target**, not measured historical production availability. Synthetic model scores and controlled deployment drills are described with their limits below.
+These are **independent synthetic experiments and controlled platform labs**, not enterprise traffic, measured production uptime or professional on-call responsibility. The 99.9% SLO is a **lab target**. The platform V2 code is deliberately separate from `main`.
 <!-- recruiter-summary:end -->
 
 
