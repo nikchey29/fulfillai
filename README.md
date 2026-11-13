@@ -7,7 +7,9 @@ The ML results weren't uniformly impressive. Demand forecasting improved from **
 
 On a separate [platform-engineering-v2 branch](https://github.com/nikchey29/fulfillai/tree/platform-engineering-v2), I deployed and tested the API delivery path with **Terraform, GCP/GKE, keyless GitHub Actions, digest-based GitOps, Argo CD, Prometheus and Grafana**. I broke a deployment on purpose, traced `ImagePullBackOff`, and practised rolling back while keeping GitOps reconciliation under control.
 
-**Start here:** [Platform implementation and evidence](docs/cloudops/V2_OVERVIEW.md) · [Recorded successful CI/delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366) · [Model results and sample sizes](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/docs/results.md)
+**Start here:** [Platform implementation and evidence](docs/cloudops/V2_OVERVIEW.md) · [Successful delivery run](https://github.com/nikchey29/fulfillai/actions/runs/37233814366) · [Rollback drill](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/incidents/INC-002-bad-release.md)
+
+The GKE run verified API delivery, health and metrics. The [prediction route](https://github.com/nikchey29/fulfillai/blob/platform-engineering-v2/src/fulfillai/api/main.py) requires a frozen model artifact. The cloud checks did not exercise artifact-backed prediction.
 
 These are **independent synthetic experiments and controlled platform labs**, not enterprise traffic, measured production uptime or professional on-call responsibility. The 99.9% SLO is a **lab target**. The platform V2 code is deliberately separate from `main`.
 <!-- recruiter-summary:end -->
