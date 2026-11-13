@@ -354,3 +354,7 @@ Python 3.11 · PostgreSQL 17 · SQL · dbt · Pandas · NumPy · scikit-learn ·
 ---
 
 FulfillAI is synthetic by design. The point of the project is not to claim production business accuracy; it is to understand the full data-to-decision path, make the assumptions visible, and keep the evaluation honest when the project changes.
+
+## License
+
+Released under the [MIT License](LICENSE).
